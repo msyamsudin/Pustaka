@@ -1,0 +1,4 @@
+{
+    "openrouter_key": "YOUR_OPENROUTER_API_KEY_HERE",
+    "openrouter_model": "google/gemini-2.0-flash-exp:free"
+}
