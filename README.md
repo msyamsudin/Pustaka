@@ -1,15 +1,16 @@
 # 📚 Pustaka+
-Aplikasi AI Full-Stack untuk memverifikasi keberadaan buku dan membuat rangkuman faktual. Aplikasi ini memastikan buku benar-benar ada (melalui Google Books & OpenLibrary) sebelum menggunakan AI untuk merangkum isinya, demi mencegah halusinasi AI.
+Aplikasi yang berfungsi untuk merangkum sebuah buku menggunakan bantuan AI melalui OpenRouter atau Ollama. Untuk mencegah halusinasi AI, aplikasi akan memastikan bahwa buku yang akan dirangkum benar-benar ada (melalui Google Books & OpenLibrary) sebelum menggunakan AI untuk merangkum isinya.
 
 ## ✨ Fitur Utama
 - **Verifikasi Ganda**: Mengecek metadata buku ke sumber tepercaya (Google Books & OpenLibrary).
-- **Rangkuman AI**: Menggunakan LLM (OpenRouter) untuk merangkum buku yang terverifikasi.
-- **Provider**: **OpenRouter**
+- **Rangkuman AI**: Menggunakan LLM (OpenRouter atau Ollama) untuk merangkum buku yang terverifikasi.
+- **Provider**: **OpenRouter** (Cloud) & **Ollama** (Lokal)
 
 ## 🛠️ Prasyarat
 Pastikan Anda sudah menginstal:
 - **Python 3.9+**
-- **Node.js** (untuk Frontend React)
+- **Node.js**
+- **Ollama** (Hanya jika ingin menjalankan model AI secara lokal/offline)
 
 ## 📦 Instalasi
 
@@ -50,14 +51,21 @@ npm run dev
 
 Buka browser di: **http://localhost:5173**
 
-## 🔑 Konfigurasi API
-Anda tidak perlu mengedit file `env` secara manual.
-1. Buka aplikasi di browser.
-2. Klik ikon **Gear (Pengaturan)** di pojok kanan atas.
-3. Pilih Provider (Gemini atau OpenRouter).
-4. Masukkan **API Key** Anda di kolom yang tersedia.
-   - Aplikasi akan otomatis memvalidasi Key tersebut.
-   - Jika menggunakan OpenRouter, daftar model akan muncul otomatis setelah validasi sukses.
+## 🔑 Konfigurasi AI
+Aplikasi ini mendukung dua metode penggunaan AI:
+
+1. **Cloud (OpenRouter)**:
+   - Klik status AI di pojok kanan atas.
+   - Pilih tab **OpenRouter** dan masukkan API Key Anda.
+   - Pilih model yang tersedia (Flash, Pro, dll).
+
+2. **Lokal (Ollama)**:
+   - Pastikan **Ollama** sudah terinstal dan sedang berjalan (`ollama serve`).
+   - Klik status AI, pilih tab **Ollama**.
+   - Masukkan Base URL Ollama (default: `http://localhost:11434`).
+   - Pilih model lokal yang sudah Anda unduh (misal: `llama3`, `mistral`, `phi3`).
+
+Konfigurasi disimpan secara otomatis di file `backend/config.json`.
 
 ## 📁 Struktur Proyek
 - `/backend`: Logika server Python (FastAPI), Verifikasi, dan Summarizer.
