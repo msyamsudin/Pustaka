@@ -13,7 +13,9 @@ class ConfigManager:
         if not os.path.exists(self.config_file):
             self.save_config({
                 "openrouter_key": "",
-                "openrouter_model": "google/gemini-2.0-flash-exp:free"
+                "openrouter_model": "google/gemini-2.0-flash-exp:free",
+                "ollama_base_url": "http://localhost:11434",
+                "ollama_model": "llama3"
             })
 
     def load_config(self) -> Dict:

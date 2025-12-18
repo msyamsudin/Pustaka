@@ -31,7 +31,7 @@ body {
 
 /* Utilities */
 .container {
-  max-width: 720px;
+  max-width: 800px;
   /* Slightly narrower for reading focus */
   margin: 0 auto;
   padding: 3rem 1.5rem;
@@ -46,6 +46,12 @@ body {
   /* Removed effects */
   box-shadow: none;
   backdrop-filter: none;
+}
+
+.sharp-image {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: high-quality;
+  -ms-interpolation-mode: bicubic;
 }
 
 .title-gradient {
@@ -383,4 +389,144 @@ option {
 
 .searchable-select-menu::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
+
+/* Sticky Summary Header */
+.sticky-summary-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 1rem 0;
+  /* Reduced from 1.5rem */
+  margin-bottom: 1.5rem;
+  /* Reduced from 2rem */
+  border-bottom: 1px solid transparent;
+  backdrop-filter: blur(8px);
+  background: rgba(9, 9, 11, 0.85);
+  /* Anda bisa menambahkan properti berikut jika ingin mengatur lebar: */
+  width: 100%;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 15px;
+  /* Zinc 950 with opacity */
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sticky-summary-header.is-stuck {
+  width: 99%;
+  max-width: 720px;
+  height: 45px;
+  margin: 0.75rem auto;
+  left: 0;
+  right: 0;
+  border-radius: 18px;
+  /* Pill shape */
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0 1.25rem;
+  /* Removed vertical padding */
+  background: rgba(24, 24, 27, 0.75);
+  /* Zinc 900 with more transparency */
+  backdrop-filter: blur(16px);
+  /* Increased blur */
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex !important;
+  align-items: center !important;
+}
+
+.sticky-summary-header.is-stuck>div {
+  width: 100%;
+}
+
+.sticky-summary-header .book-cover-container {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1;
+  width: 80px;
+  margin-right: 1.5rem;
+}
+
+.sticky-summary-header.is-stuck .book-cover-container {
+  width: 0;
+  margin-right: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sticky-summary-header .header-title {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 1.25rem;
+}
+
+.sticky-summary-header.is-stuck .header-title {
+  font-size: 0.95rem;
+  margin-bottom: 0 !important;
+}
+
+.sticky-summary-header.is-stuck .header-author {
+  display: flex !important;
+  font-size: 0.75rem !important;
+  opacity: 0.8;
+}
+
+.sticky-summary-header.is-stuck .btn-primary,
+.sticky-summary-header.is-stuck .btn-danger {
+  padding: 0.2rem 0.6rem;
+  min-width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+
+.token-badge-realtime {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--accent-color);
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-color);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  background-color: var(--accent-color);
+  border-radius: 50%;
+  animation: pulse-animation 1.5s infinite;
+}
+
+@keyframes pulse-animation {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+  }
+
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
+  }
+
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+/* Metadata Adjustments */
+.summary-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.summary-card {
+  padding: 1.25rem 1.5rem !important;
 }

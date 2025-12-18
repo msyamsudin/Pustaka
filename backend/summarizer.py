@@ -1,21 +1,22 @@
 from openai import OpenAI
 from typing import Dict, List
 import time
+import json
 from currency_manager import CurrencyManager
 
 
 class BookSummarizer:
-    def __init__(self, api_key: str, model_name: str = None, timeout: int = 60, max_retries: int = 3):
+    def __init__(self, api_key: str = None, model_name: str = None, provider: str = "OpenRouter", base_url: str = None, timeout: int = 60, max_retries: int = 3):
         self.api_key = api_key
         self.model_name = model_name or "google/gemini-2.0-flash-exp:free"
-        self.timeout = timeout
-        self.max_retries = max_retries
+        self.provider = provider
+        self.base_url = base_url
         self.timeout = timeout
         self.max_retries = max_retries
         self.client = None
         self.currency_manager = CurrencyManager()
 
-        if self.api_key:
+        if self.provider == "OpenRouter" and self.api_key:
             self.client = OpenAI(
                 base_url="https://openrouter.ai/api/v1",
                 api_key=self.api_key,
@@ -26,10 +27,13 @@ class BookSummarizer:
                 timeout=float(self.timeout),
                 max_retries=self.max_retries
             )
+        elif self.provider == "Ollama":
+             self.base_url = self.base_url or "http://localhost:11434"
+             self.model_name = self.model_name or "llama3"
 
-    def summarize(self, book_metadata: List[Dict]) -> str:
-        if not self.api_key:
-            return "Error: API Key tidak ditemukan."
+    def summarize(self, book_metadata: List[Dict]) -> Dict:
+        if self.provider == "OpenRouter" and not self.api_key:
+            return {"error": "Error: API Key tidak ditemukan."}
 
         # Consolidated metadata
         primary_info = book_metadata[0]
@@ -46,6 +50,164 @@ class BookSummarizer:
         source_note = "pengetahuan tentang buku ini dan deskripsi penerbit"
 
         prompt = f"""
+        (Instruksi yang sama seperti sebelumnya...)
+        [Isi Prompt Disembunyikan untuk Kejelasan]
+        Data Buku: {title} by {author}. Context: {context_description}
+        """
+        
+        # Real prompt usage
+        prompt = self._get_full_prompt(title, author, context_description, source_note)
+
+        try:
+            start_time = time.time()
+            
+            if self.provider == "Ollama":
+                return self._summarize_ollama(prompt, start_time)
+            
+            if not self.client:
+                return {"error": "Error: AI client not initialized."}
+            
+            completion = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            end_time = time.time()
+            duration = round(end_time - start_time, 2)
+            
+            usage = completion.usage
+            raw_content = completion.choices[0].message.content
+            cleaned_content = self._clean_output(raw_content)
+            
+            return {
+                "content": cleaned_content,
+                "usage": {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens
+                },
+                "model": self.model_name,
+                "provider": "OpenRouter",
+                "cost_estimate": self._calculate_cost(usage.prompt_tokens, usage.completion_tokens),
+                "duration_seconds": duration
+            }
+        except Exception as e:
+            return {"error": f"Error generating summary: {str(e)}"}
+
+    def summarize_stream(self, book_metadata: List[Dict]):
+        """Generator that yields chunks of the summary."""
+        if self.provider == "OpenRouter" and not self.api_key:
+            yield f"data: {json.dumps({'error': 'Error: API Key tidak ditemukan.'})}\n\n"
+            return
+
+        # Consolidated metadata
+        primary_info = book_metadata[0]
+        context_description = ""
+        for source in book_metadata:
+            if source.get("description"):
+                context_description = source.get("description")
+                break
+        
+        title = primary_info.get("title", "Unknown Title")
+        author = ", ".join(primary_info.get("authors", [])) if isinstance(primary_info.get("authors"), list) else primary_info.get("authors", "")
+        source_note = "pengetahuan tentang buku ini dan deskripsi penerbit"
+        prompt = self._get_full_prompt(title, author, context_description, source_note)
+
+        try:
+            start_time = time.time()
+            if self.provider == "Ollama":
+                yield from self._stream_ollama(prompt, start_time)
+            else:
+                if not self.client:
+                    yield f"data: {json.dumps({'error': 'Error: AI client not initialized.'})}\n\n"
+                    return
+
+                stream = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    stream=True,
+                    stream_options={"include_usage": True}
+                )
+                
+                full_content = ""
+                final_usage = None
+                for chunk in stream:
+                    # Capture usage information if provided (usually in the last chunk)
+                    if hasattr(chunk, 'usage') and chunk.usage:
+                        final_usage = {
+                            "prompt_tokens": chunk.usage.prompt_tokens,
+                            "completion_tokens": chunk.usage.completion_tokens,
+                            "total_tokens": chunk.usage.total_tokens
+                        }
+
+                    if chunk.choices and len(chunk.choices) > 0:
+                        if chunk.choices[0].delta.content:
+                            content = chunk.choices[0].delta.content
+                            full_content += content
+                            yield f"data: {json.dumps({'content': content})}\n\n"
+                
+                # Final chunk with stats
+                duration = round(time.time() - start_time, 2)
+                stats = {
+                    'done': True, 
+                    'duration_seconds': duration, 
+                    'model': self.model_name, 
+                    'provider': 'OpenRouter'
+                }
+                
+                if final_usage:
+                    stats['usage'] = final_usage
+                    # Also include cost estimate if usage is available
+                    stats['cost_estimate'] = self._calculate_cost(final_usage['prompt_tokens'], final_usage['completion_tokens'])
+
+                yield f"data: {json.dumps(stats)}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    def _stream_ollama(self, prompt: str, start_time: float):
+        import requests
+        import json
+        url = f"{self.base_url}/api/generate"
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": True
+        }
+        
+        try:
+            # We use stream=True in requests for line-by-line reading
+            response = requests.post(url, json=payload, stream=True, timeout=self.timeout)
+            if response.status_code == 200:
+                for line in response.iter_lines():
+                    if line:
+                        data = json.loads(line.decode('utf-8'))
+                        content = data.get("response", "")
+                        if content:
+                            yield f"data: {json.dumps({'content': content})}\n\n"
+                        
+                        if data.get("done"):
+                            duration = round(time.time() - start_time, 2)
+                            stats = {
+                                "done": True,
+                                "duration_seconds": duration,
+                                "model": self.model_name,
+                                "provider": "Ollama",
+                                "usage": {
+                                    "prompt_tokens": data.get("prompt_eval_count", 0),
+                                    "completion_tokens": data.get("eval_count", 0),
+                                    "total_tokens": data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
+                                }
+                            }
+                            yield f"data: {json.dumps(stats)}\n\n"
+            else:
+                yield f"data: {json.dumps({'error': f'Ollama Error: {response.text}'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'Failed to connect to Ollama: {str(e)}'})}\n\n"
+
+    def _get_full_prompt(self, title, author, context_description, source_note):
+        return f"""
         Anda adalah asisten AI spesialis analisis literatur kelas dunia yang mahir dalam mengekstrak informasi padat (dense information).
         
         Tugas Anda adalah membuat rangkuman buku yang sangat informatif menggunakan teknik **Chain of Density**.
@@ -122,48 +284,6 @@ class BookSummarizer:
         - SPESIFIK: Jangan bilang "Habit sangat penting", katakan "Atomic habits bekerja melalui mekanisme 'Environment Design' dan 'Identity-based change'".
         - JANGAN mengulang instruksi ini dalam jawaban.
         """
-
-        try:
-            if not self.client:
-                return "Error: OpenRouter client not initialized."
-            
-            start_time = time.time()
-            completion = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            end_time = time.time()
-            duration = round(end_time - start_time, 2)
-            
-            usage = completion.usage
-            raw_content = completion.choices[0].message.content
-            cleaned_content = self._clean_output(raw_content)
-            
-            return {
-                "content": cleaned_content,
-                "usage": {
-                    "prompt_tokens": usage.prompt_tokens,
-                    "completion_tokens": usage.completion_tokens,
-                    "total_tokens": usage.total_tokens
-                },
-                "model": self.model_name,
-                "provider": "OpenRouter",
-                "cost_estimate": self._calculate_cost(usage.prompt_tokens, usage.completion_tokens),
-                "duration_seconds": duration
-            }
-        except Exception as e:
-            # Check for openai specific errors if needed, but generic catch is safer for now 
-            # as individual imports might be needed from openai
-            # But let's try to be more specific if possible.
-            import openai
-            if isinstance(e, openai.APITimeoutError):
-                 return {"error": f"Request timed out after {self.timeout} seconds."}
-            elif isinstance(e, openai.APIConnectionError):
-                 return {"error": "Failed to connect to AI provider. Please check your internet connection."}
-            
-            return {"error": f"Error generating summary: {str(e)}"}
 
     def _calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> dict:
         # 1. Check for Free Models (Generic)

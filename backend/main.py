@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
@@ -38,15 +39,12 @@ class VerificationRequest(BaseModel):
     author: Optional[str] = None
 
 
-class SummarizationRequest(BaseModel):
-    metadata: List[Dict]
-    api_key: Optional[str] = None
-    model: Optional[str] = None  # For OpenRouter specific model
-
-
 class ConfigRequest(BaseModel):
     openrouter_key: Optional[str] = None
     openrouter_model: Optional[str] = None
+    ollama_base_url: Optional[str] = None
+    ollama_model: Optional[str] = None
+    provider: Optional[str] = None
 
 class CoverUpdateRequest(BaseModel):
     image_url: str
@@ -58,8 +56,7 @@ class MetadataUpdateRequest(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"message": "Perpustakaan AI Backend is Running"}
-
+    return {"message": "Pustaka+ Backend is Running"}
 
 @app.get("/api/config")
 def get_config():
@@ -69,28 +66,20 @@ def get_config():
 def search_covers(query: str):
     return BookVerifier().search_book_covers(query)
 
-@app.put("/api/books/{book_id}/cover")
-def update_book_cover(book_id: str, request: CoverUpdateRequest):
-    # Determine storage manager instance (assuming it needs to be instantiated or singleton)
-    # Since storage_manager.py has StorageManager class but not instantiated globally here yet
-    # We'll instantiate it inside (or better, instantiate globally like config_manager)
-    from storage_manager import StorageManager
-    storage = StorageManager()
-    new_path = storage.update_book_cover(book_id, request.image_url)
-    if new_path:
-        return {"success": True, "image_url": new_path}
-    raise HTTPException(status_code=404, detail="Book not found")
-
-
 @app.post("/api/config")
 def update_config(req: ConfigRequest):
     current_config = config_manager.load_config()
     
     if req.openrouter_key is not None:
         current_config["openrouter_key"] = req.openrouter_key
-        
     if req.openrouter_model is not None:
         current_config["openrouter_model"] = req.openrouter_model
+    if req.ollama_base_url is not None:
+        current_config["ollama_base_url"] = req.ollama_base_url
+    if req.ollama_model is not None:
+        current_config["ollama_model"] = req.ollama_model
+    if req.provider is not None:
+        current_config["provider"] = req.provider
         
     config_manager.save_config(current_config)
     return {"status": "success", "config": current_config}
@@ -107,64 +96,82 @@ def verify_book(req: VerificationRequest):
     }
 
 
+class SummarizationRequest(BaseModel):
+    metadata: List[Dict]
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    provider: Optional[str] = "OpenRouter"
+    base_url: Optional[str] = None
+
+
 @app.post("/api/summarize")
 def summarize_book(req: SummarizationRequest):
-    # Determine API Key
-    api_key = req.api_key
-    if not api_key:
-        api_key = config_manager.get_key("openrouter_key")
+    # Determine API Key & Provider from request or config
+    config = config_manager.load_config()
     
-    # Determine Model
-    model = req.model
-    if not model:
-        model = config_manager.get_key("openrouter_model")
+    provider = req.provider or config.get("provider", "OpenRouter")
+    api_key = req.api_key or config.get("openrouter_key")
+    model = req.model or config.get("openrouter_model")
+    base_url = req.base_url or config.get("ollama_base_url")
 
-    if not api_key:
-        raise HTTPException(status_code=400, detail="OpenRouter API Key is required")
+    # If Ollama, model might be different
+    if provider == "Ollama":
+        model = req.model or config.get("ollama_model", "llama3")
+
+    summarizer = BookSummarizer(
+        api_key=api_key, 
+        model_name=model, 
+        provider=provider, 
+        base_url=base_url
+    )
     
-    summarizer = BookSummarizer(api_key, model_name=model)
-    result = summarizer.summarize(req.metadata)
-    
-    if "error" in result:
-        raise HTTPException(status_code=500, detail=result["error"])
-        
-    return {
-        "summary": result["content"],
-        "usage": result["usage"],
-        "model": result["model"],
-        "provider": result["provider"],
-        "cost_estimate": result.get("cost_estimate"),
-        "duration_seconds": result.get("duration_seconds")
-    }
-
-
-class ModelsRequest(BaseModel):
-    api_key: str
+    return StreamingResponse(
+        summarizer.summarize_stream(req.metadata),
+        media_type="text/event-stream"
+    )
 
 
 @app.post("/api/models")
-def list_models(req: ModelsRequest):
-    print(f"Validating OpenRouter Key: {req.api_key[:5]}...")
-    try:
-        from openai import OpenAI
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=req.api_key,
-            default_headers={
-                "HTTP-Referer": "http://localhost:5173",
-                "X-Title": "Perpustakaan AI",
-            }
-        )
-        # Fetch models to validate key
-        models = client.models.list()
-        print("OpenRouter Validation Success")
-        # Sort and filter interesting ones, or just return top IDs
-        model_ids = [m.id for m in models.data]
-        model_ids.sort()
-        return {"valid": True, "models": model_ids}
-    except Exception as e:
-        print(f"OpenRouter Validation Failed: {str(e)}")
-        raise HTTPException(status_code=401, detail=f"OpenRouter Error: {str(e)}")
+def list_models(req: Dict):
+    provider = req.get("provider", "OpenRouter")
+    api_key = req.get("api_key")
+    base_url = req.get("base_url")
+
+    if provider == "OpenRouter":
+        if not api_key:
+             raise HTTPException(status_code=400, detail="OpenRouter API Key is required")
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=api_key,
+                default_headers={
+                    "HTTP-Referer": "http://localhost:5173",
+                    "X-Title": "Pustaka+",
+                }
+            )
+            models = client.models.list()
+            model_ids = [m.id for m in models.data]
+            model_ids.sort()
+            return {"valid": True, "models": model_ids}
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"OpenRouter Error: {str(e)}")
+    
+    elif provider == "Ollama":
+        import requests
+        url = f"{base_url or 'http://localhost:11434'}/api/tags"
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                models = [m["name"] for m in data.get("models", [])]
+                return {"valid": True, "models": models}
+            else:
+                raise HTTPException(status_code=response.status_code, detail=f"Ollama Error: {response.text}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to connect to Ollama: {str(e)}")
+    
+    return {"valid": False, "models": []}
 
 
 # --- Saved Summaries Endpoints ---

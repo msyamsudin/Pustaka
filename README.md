@@ -64,4 +64,4 @@ Anda tidak perlu mengedit file `env` secara manual.
 - `/frontend`: Antarmuka pengguna (React + Vite).
 
 ## 📄 Lisensi
-Proyek ini dilisensikan di bawah **MIT License**. Lihat file [LICENSE](LICENSE) untuk detail lebih lanjut.
+[LICENSE](LICENSE)

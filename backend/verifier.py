@@ -38,7 +38,7 @@ class BookVerifier:
                         "isbn": self._extract_isbn_google(book_info.get("industryIdentifiers", [])),
                         "publishedDate": book_info.get("publishedDate"),
                         "description": book_info.get("description", ""),
-                        "image_url": book_info.get("imageLinks", {}).get("thumbnail", "").replace("http://", "https://")
+                        "image_url": self._upgrade_google_image(book_info.get("imageLinks", {}).get("thumbnail", ""))
                     }
         except Exception as e:
             print(f"Error checking Google Books: {e}")
@@ -84,6 +84,19 @@ class BookVerifier:
         except Exception as e:
             print(f"Error checking Open Library: {e}")
         return None
+
+    def _upgrade_google_image(self, url: str) -> str:
+        if not url:
+            return ""
+        # Upgrade from zoom=1 to zoom=2 or zoom=3 for higher res
+        # Also ensure https
+        url = url.replace("http://", "https://")
+        if "zoom=1" in url:
+            # Try to get zoom=2 (higher res) or zoom=3
+            # Some books only support zoom=1, but many support zoom=2/3
+            # We'll stick to 2 as it's more reliable for widespread availability
+            url = url.replace("zoom=1", "zoom=2")
+        return url
 
     def _extract_isbn_google(self, identifiers) -> str:
         for ident in identifiers:
@@ -178,7 +191,7 @@ class BookVerifier:
                     thumb = info.get("imageLinks", {}).get("thumbnail")
                     if thumb:
                         results.append({
-                            "url": thumb.replace("http://", "https://"),
+                            "url": self._upgrade_google_image(thumb),
                             "source": "Google Books",
                             "title": info.get("title", "Unknown"),
                             "author": ", ".join(info.get("authors", []))

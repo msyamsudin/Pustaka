@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -6,14 +6,17 @@ import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, Refre
 
 const API_BASE_URL = "http://127.0.0.1:8000/api";
 
-const getImageUrl = (url) => {
+const getImageUrl = (url, timestamp) => {
   if (!url) return '';
   if (url.startsWith('http') || url.startsWith('blob:')) return url;
 
   // Handle relative paths (with or without leading slash)
   const baseUrl = API_BASE_URL.replace('/api', '');
   const cleanUrl = url.startsWith('/') ? url : `/${url}`;
-  return `${baseUrl}${cleanUrl}`;
+
+  // Cache busting: append timestamp if provided
+  const fullUrl = `${baseUrl}${cleanUrl}`;
+  return timestamp ? `${fullUrl}?t=${new Date(timestamp).getTime()}` : fullUrl;
 };
 
 const SearchableSelect = ({ options, value, onChange, placeholder = "Select..." }) => {
@@ -278,6 +281,146 @@ const Toast = ({ message, type = 'success', onClose }) => {
   );
 };
 
+const LoadingOverlay = ({ summarizing }) => {
+  const [statusIndex, setStatusIndex] = useState(0);
+  const [displayedText, setDisplayedText] = useState("");
+  const [isTyping, setIsTyping] = useState(true);
+
+  const statuses = [
+    "Membaca bab demi bab...",
+    "Menganalisis konteks...",
+    "Menyusun poin-poin penting...",
+    "Memoles kalimat...",
+    "Finishing touch..."
+  ];
+
+  useEffect(() => {
+    if (!summarizing) return;
+    const statusInterval = setInterval(() => {
+      setStatusIndex((prev) => (prev + 1) % statuses.length);
+      setIsTyping(true);
+      setDisplayedText("");
+    }, 3500);
+
+    return () => clearInterval(statusInterval);
+  }, [summarizing, statuses.length]);
+
+  useEffect(() => {
+    if (!summarizing || !isTyping) return;
+
+    const targetText = statuses[statusIndex];
+    if (displayedText.length < targetText.length) {
+      const timeout = setTimeout(() => {
+        setDisplayedText(targetText.slice(0, displayedText.length + 1));
+      }, 50);
+      return () => clearTimeout(timeout);
+    } else {
+      setIsTyping(false);
+    }
+  }, [displayedText, statusIndex, isTyping, summarizing, statuses]);
+
+  if (!summarizing) return null;
+
+  return (
+    <div className="modal-overlay animate-fade-in" style={{ zIndex: 2000, background: 'rgba(9, 9, 11, 0.85)' }}>
+      <div style={{ textAlign: 'center', color: 'white', width: '100%', maxWidth: '450px', padding: '0 1.5rem' }}>
+        <div className="semantic-wave-container">
+          {[...Array(5)].map((_, i) => (
+            <div
+              key={i}
+              className="wave-line"
+              style={{ animationDelay: `${i * 0.15}s` }}
+            />
+          ))}
+        </div>
+        <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', fontWeight: 500, letterSpacing: '0.5px', color: 'rgba(255,255,255,0.9)' }}>
+          SEDANG MERANGKUM
+        </h3>
+        <div style={{
+          color: 'var(--accent-color)',
+          marginBottom: '0',
+          height: '24px',
+          fontSize: '1.1rem',
+          fontWeight: 500
+        }}>
+          {displayedText}<span className="typing-cursor" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const SkeletonSummary = ({ status, onStop }) => (
+  <div className="glass-card animate-fade-in" style={{ marginBottom: '2rem', border: '1px dashed var(--border-color)', position: 'relative' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="spinner" style={{ width: '20px', height: '20px' }}></div>
+        <span style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+          {status || "Sedang berkomunikasi dengan AI..."}
+        </span>
+      </div>
+      <button
+        onClick={onStop}
+        className="btn-secondary"
+        style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+      >
+        <X size={14} /> Batal
+      </button>
+    </div>
+    <div className="skeleton-block" style={{ width: '90%' }}></div>
+    <div className="skeleton-block" style={{ width: '95%' }}></div>
+    <div className="skeleton-block" style={{ width: '85%' }}></div>
+    <div className="skeleton-block" style={{ width: '40%', marginTop: '1.5rem' }}></div>
+    <div className="skeleton-block" style={{ width: '92%' }}></div>
+    <div className="skeleton-block" style={{ width: '88%' }}></div>
+  </div>
+);
+
+const MetadataEditModal = ({ isOpen, book, title, author, isbn, setTitle, setAuthor, setIsbn, onSave, onClose, isSaving }) => {
+  if (!isOpen || !book) return null;
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content glass-card animate-scale-up" style={{ maxWidth: '500px', width: '90%' }}>
+        <h2 style={{ marginTop: 0, marginBottom: '1.5rem' }}>Edit Info Buku</h2>
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Judul</label>
+          <input
+            type="text"
+            className="input-field"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Penulis</label>
+          <input
+            type="text"
+            className="input-field"
+            value={author}
+            onChange={(e) => setAuthor(e.target.value)}
+          />
+        </div>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>ISBN</label>
+          <input
+            type="text"
+            className="input-field"
+            value={isbn}
+            onChange={(e) => setIsbn(e.target.value)}
+          />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+          <button className="btn-secondary" onClick={onClose} disabled={isSaving}>Batal</button>
+          <button className="btn-primary" onClick={onSave} disabled={isSaving}>
+            {isSaving ? "Menyimpan..." : "Simpan Perubahan"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 function App() {
   const [isbn, setIsbn] = useState('');
   const [title, setTitle] = useState('');
@@ -290,8 +433,11 @@ function App() {
   const [error, setError] = useState(null);
 
   // Settings
+  const [provider, setProvider] = useState('OpenRouter');
   const [openRouterKey, setOpenRouterKey] = useState('');
   const [openRouterModel, setOpenRouterModel] = useState('google/gemini-2.0-flash-exp:free');
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434');
+  const [ollamaModel, setOllamaModel] = useState('llama3');
   const [availableModels, setAvailableModels] = useState([]);
   const [keyValid, setKeyValid] = useState(null); // null, true, false
   const [keyError, setKeyError] = useState('');
@@ -319,11 +465,18 @@ function App() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [bookToDelete, setBookToDelete] = useState(null);
 
+  // Streaming & UI Enhancements
+  const [streamingStatus, setStreamingStatus] = useState('');
+  const [tokensReceived, setTokensReceived] = useState(0);
+  const abortControllerRef = useRef(null);
+
+  const [isStuck, setIsStuck] = useState(false);
+  const headerRef = useRef(null);
+  const libraryContentRef = useRef(null);
+
   // Cover Edit State
   const [coverEditBook, setCoverEditBook] = useState(null);
   const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
-
-  const libraryContentRef = React.useRef(null);
 
   const showAlert = (title, message) => {
     setAlertModal({ isOpen: true, title, message });
@@ -348,8 +501,26 @@ function App() {
   const handleUpdateCover = async (newUrl) => {
     if (!coverEditBook) return;
     try {
-      await axios.put(`${API_BASE_URL}/books/${coverEditBook.id}/cover`, { image_url: newUrl });
-      loadSavedSummaries(); // Refresh list to show new cover
+      const response = await axios.put(`${API_BASE_URL}/books/${coverEditBook.id}/cover`, { image_url: newUrl });
+      const serverPath = response.data; // Backend returns the new local path string
+
+      // Update local summaries list immediately
+      setSavedSummaries(prev => prev.map(book => {
+        if (book.id === coverEditBook.id) {
+          return { ...book, image_url: serverPath, last_updated: new Date().toISOString() };
+        }
+        return book;
+      }));
+
+      // Update current book if it's the one we're looking at
+      if (currentBook && currentBook.id === coverEditBook.id) {
+        setCurrentBook(prev => ({
+          ...prev,
+          image_url: serverPath,
+          last_updated: new Date().toISOString()
+        }));
+      }
+
       setIsCoverModalOpen(false);
       setCoverEditBook(null);
       showToast("Sampul berhasil diperbarui");
@@ -378,12 +549,25 @@ function App() {
         // Load Config
         const configRes = await axios.get(`${API_BASE_URL}/config`);
         if (configRes.data) {
-          const loadedKey = configRes.data.openrouter_key;
-          if (loadedKey) {
-            setOpenRouterKey(loadedKey);
-            validateApiKey(loadedKey, false);
+          if (configRes.data.provider) setProvider(configRes.data.provider);
+
+          if (configRes.data.openrouter_key) {
+            setOpenRouterKey(configRes.data.openrouter_key);
+            // We'll validate below if the provider is OpenRouter
           }
           if (configRes.data.openrouter_model) setOpenRouterModel(configRes.data.openrouter_model);
+
+          if (configRes.data.ollama_base_url) setOllamaBaseUrl(configRes.data.ollama_base_url);
+          if (configRes.data.ollama_model) setOllamaModel(configRes.data.ollama_model);
+
+          // Initial model fetch based on active provider
+          const activeProvider = configRes.data.provider || 'OpenRouter';
+          if (activeProvider === 'OpenRouter' && configRes.data.openrouter_key) {
+            validateApiKey(configRes.data.openrouter_key, false, 'OpenRouter');
+          } else if (activeProvider === 'Ollama') {
+            validateApiKey(null, false, 'Ollama', configRes.data.ollama_base_url || 'http://localhost:11434');
+          }
+
           setConfigLoaded(true);
         }
       } catch (err) {
@@ -391,6 +575,18 @@ function App() {
       }
     };
     checkBackendAndLoadConfig();
+
+    // Scroll listener for sticky header
+    const handleScroll = () => {
+      if (headerRef.current) {
+        const rect = headerRef.current.getBoundingClientRect();
+        // If the header reaches the top, mark it as stuck
+        setIsStuck(rect.top <= 0);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   // Metadata Edit Modal State
@@ -553,28 +749,34 @@ function App() {
     setSavedId(variant.id);
   };
 
-  const validateApiKey = async (key, shouldSave = true) => {
-    if (!key) { setKeyValid(null); setKeyError(''); return; }
+  const validateApiKey = async (key, shouldSave = true, targetProvider = provider, baseUrl = ollamaBaseUrl) => {
+    if (targetProvider === 'OpenRouter' && !key) { setKeyValid(null); setKeyError(''); return; }
+
     setValidatingKey(true);
     setKeyValid(null);
     setKeyError('');
 
     try {
       const response = await axios.post(`${API_BASE_URL}/models`, {
-        api_key: key
+        provider: targetProvider,
+        api_key: key,
+        base_url: baseUrl
       });
       if (response.data.valid) {
         setKeyValid(true);
         setAvailableModels(response.data.models);
         if (shouldSave) {
-          saveConfig(key, openRouterModel);
+          saveConfig({
+            provider: targetProvider,
+            openrouter_key: targetProvider === 'OpenRouter' ? key : openRouterKey,
+            ollama_base_url: targetProvider === 'Ollama' ? baseUrl : ollamaBaseUrl
+          });
         }
       }
     } catch (err) {
       setKeyValid(false);
       if (err.code === "ERR_NETWORK") {
-        setKeyError("Gagal terhubung ke Backend. Server mati?");
-        setBackendUp(false);
+        setKeyError(targetProvider === 'Ollama' ? "Gagal terhubung ke Ollama. Pastikan Ollama berjalan." : "Gagal terhubung ke Backend. Server mati?");
       } else {
         const msg = err.response?.data?.detail || err.message;
         setKeyError(msg);
@@ -584,12 +786,9 @@ function App() {
     }
   };
 
-  const saveConfig = async (key, model) => {
+  const saveConfig = async (updates) => {
     try {
-      await axios.post(`${API_BASE_URL}/config`, {
-        openrouter_key: key,
-        openrouter_model: model
-      });
+      await axios.post(`${API_BASE_URL}/config`, updates);
     } catch (err) {
       console.error("Failed to save config", err);
     }
@@ -597,8 +796,13 @@ function App() {
 
   const handleModelChange = (e) => {
     const newModel = e.target.value;
-    setOpenRouterModel(newModel);
-    saveConfig(openRouterKey, newModel);
+    if (provider === 'OpenRouter') {
+      setOpenRouterModel(newModel);
+      saveConfig({ openrouter_model: newModel });
+    } else {
+      setOllamaModel(newModel);
+      saveConfig({ ollama_model: newModel });
+    }
   };
 
   const handleVerify = async (e) => {
@@ -679,33 +883,92 @@ function App() {
     setSummary(null);
     setUsageStats(null);
     setSavedId(null);
-    setCurrentVariant(null); // Reset variant context
+    setCurrentVariant(null);
+    setTokensReceived(0);
+    setStreamingStatus(`Menghubungkan ke ${provider}...`);
+
+    abortControllerRef.current = new AbortController();
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/summarize`, {
-        metadata: verificationResult.sources,
-        api_key: openRouterKey || null,
-        model: openRouterModel || null
+      const response = await fetch(`${API_BASE_URL}/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: abortControllerRef.current.signal,
+        body: JSON.stringify({
+          metadata: verificationResult.sources,
+          provider: provider,
+          api_key: provider === 'OpenRouter' ? openRouterKey : null,
+          model: provider === 'OpenRouter' ? openRouterModel : ollamaModel,
+          base_url: provider === 'Ollama' ? ollamaBaseUrl : null
+        }),
       });
-      setSummary(response.data.summary);
-      setUsageStats({
-        model: response.data.model,
-        provider: response.data.provider,
-        tokens: response.data.usage,
-        cost_estimate: response.data.cost_estimate,
-        duration_seconds: response.data.duration_seconds
-      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Gagal membuat rangkuman.");
+      }
+
+      setStreamingStatus("AI sedang menganalisis struktur buku...");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedSummary = "";
+      let tokenCount = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.error) {
+                setError(`Error: ${data.error}`);
+                setSummarizing(false);
+                return;
+              }
+
+              if (data.content) {
+                if (accumulatedSummary === "") setStreamingStatus("Menghasilkan rangkuman...");
+                accumulatedSummary += data.content;
+                setSummary(accumulatedSummary);
+                tokenCount += 1;
+                setTokensReceived(tokenCount);
+              }
+
+              if (data.done) {
+                setUsageStats({
+                  model: data.model,
+                  provider: data.provider,
+                  tokens: data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                  cost_estimate: data.cost_estimate || { total_usd: 0, total_idr: 0, is_free: true },
+                  duration_seconds: data.duration_seconds
+                });
+              }
+            } catch (e) {
+              console.error("Error parsing stream chunk", e, line);
+            }
+          }
+        }
+      }
       setBackendUp(true);
     } catch (err) {
-      if (err.code === "ERR_NETWORK") {
-        setBackendUp(false);
-        setError("Koneksi ke Backend terputus.");
+      if (err.name === 'AbortError') {
+        showToast("Generasi dihentikan", "info");
       } else {
-        const detail = err.response?.data?.detail || "Gagal membuat rangkuman.";
-        setError(`Error: ${detail}`);
+        console.error("Summarize error:", err);
+        setError(`Error: ${err.message}`);
       }
     } finally {
       setSummarizing(false);
+      setStreamingStatus('');
+      abortControllerRef.current = null;
     }
   };
 
@@ -781,6 +1044,12 @@ function App() {
       // Update local state
       const updatedBook = response.data;
       setSavedSummaries(prev => prev.map(book => book.id === updatedBook.id ? updatedBook : book));
+
+      // Update current book if it's the one we're looking at
+      if (currentBook && currentBook.id === updatedBook.id) {
+        setCurrentBook(updatedBook);
+      }
+
       showToast("Info buku berhasil diperbarui");
       setIsMetadataModalOpen(false);
     } catch (err) {
@@ -789,172 +1058,6 @@ function App() {
     } finally {
       setIsSavingMetadata(false);
     }
-  };
-
-  const LoadingOverlay = () => {
-    const [statusIndex, setStatusIndex] = useState(0);
-    const [displayedText, setDisplayedText] = useState("");
-    const [isTyping, setIsTyping] = useState(true);
-
-    const statuses = [
-      "Membaca bab demi bab...",
-      "Menganalisis konteks...",
-      "Menyusun poin-poin penting...",
-      "Memoles kalimat...",
-      "Finishing touch..."
-    ];
-
-    useEffect(() => {
-      const statusInterval = setInterval(() => {
-        setStatusIndex((prev) => (prev + 1) % statuses.length);
-        setIsTyping(true);
-        setDisplayedText("");
-      }, 3500);
-
-      return () => clearInterval(statusInterval);
-    }, []);
-
-    // Character-by-character typing effect
-    useEffect(() => {
-      if (!isTyping) return;
-
-      const targetText = statuses[statusIndex];
-      if (displayedText.length < targetText.length) {
-        const timeout = setTimeout(() => {
-          setDisplayedText(targetText.slice(0, displayedText.length + 1));
-        }, 50);
-        return () => clearTimeout(timeout);
-      } else {
-        setIsTyping(false);
-      }
-    }, [displayedText, statusIndex, isTyping]);
-
-    if (!summarizing) return null;
-
-    return (
-      <div className="modal-overlay animate-fade-in" style={{ zIndex: 2000, background: 'rgba(9, 9, 11, 0.85)' }}>
-        <div style={{ textAlign: 'center', color: 'white', width: '100%', maxWidth: '450px', padding: '0 1.5rem' }}>
-
-          {/* Semantic Wave Header */}
-          <div className="semantic-wave-container">
-            {[...Array(5)].map((_, i) => (
-              <div
-                key={i}
-                className="wave-line"
-                style={{ animationDelay: `${i * 0.15}s` }}
-              />
-            ))}
-          </div>
-
-          <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', fontWeight: 500, letterSpacing: '0.5px', color: 'rgba(255,255,255,0.9)' }}>
-            SEDANG MERANGKUM
-          </h3>
-
-          <div style={{
-            color: 'var(--accent-color)',
-            marginBottom: '0',
-            height: '24px',
-            fontSize: '1.1rem',
-            fontWeight: 500
-          }}>
-            {displayedText}<span className="typing-cursor" />
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const SkeletonSummary = () => {
-    return (
-      <div className="glass-card animate-fade-in" style={{ marginBottom: '2rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2.5rem' }}>
-          <div style={{ display: 'flex', gap: '1.5rem', width: '100%' }}>
-            {/* Skeleton Cover */}
-            <div style={{
-              width: '80px',
-              height: '120px',
-              background: 'rgba(255,255,255,0.03)',
-              borderRadius: '4px',
-              flexShrink: 0
-            }} className="skeleton-block" />
-
-            <div style={{ flex: 1, paddingTop: '0.5rem' }}>
-              <div className="skeleton-block" style={{ width: '60%', height: '24px', marginBottom: '1rem' }} />
-              <div className="skeleton-block" style={{ width: '40%', height: '16px' }} />
-            </div>
-          </div>
-        </div>
-
-        <div style={{ padding: '1rem 0' }}>
-          <div className="skeleton-block" style={{ width: '100%' }} />
-          <div className="skeleton-block" style={{ width: '90%' }} />
-          <div className="skeleton-block" style={{ width: '95%' }} />
-          <div className="skeleton-block" style={{ width: '100%', marginTop: '2rem' }} />
-          <div className="skeleton-block" style={{ width: '85%' }} />
-          <div className="skeleton-block" style={{ width: '90%' }} />
-          <div className="skeleton-block" style={{ width: '40%', marginTop: '2rem' }} />
-        </div>
-      </div>
-    );
-  };
-
-  const MetadataEditModal = () => {
-    if (!isMetadataModalOpen || !metadataEditBook) return null;
-
-    return (
-      <div className="modal-overlay">
-        <div className="modal-content glass-card animate-scale-up" style={{ maxWidth: '500px', width: '90%' }}>
-          <h2 style={{ marginTop: 0, marginBottom: '1.5rem' }}>Edit Info Buku</h2>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Judul</label>
-            <input
-              type="text"
-              className="input-field"
-              value={metadataTitle}
-              onChange={(e) => setMetadataTitle(e.target.value)}
-            />
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Penulis</label>
-            <input
-              type="text"
-              className="input-field"
-              value={metadataAuthor}
-              onChange={(e) => setMetadataAuthor(e.target.value)}
-            />
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>ISBN</label>
-            <input
-              type="text"
-              className="input-field"
-              value={metadataIsbn}
-              onChange={(e) => setMetadataIsbn(e.target.value)}
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-            <button
-              className="btn-secondary"
-              onClick={() => setIsMetadataModalOpen(false)}
-              disabled={isSavingMetadata}
-            >
-              Batal
-            </button>
-            <button
-              className="btn-primary"
-              onClick={handleUpdateMetadata}
-              disabled={isSavingMetadata}
-            >
-              {isSavingMetadata ? "Menyimpan..." : "Simpan Perubahan"}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -1008,11 +1111,11 @@ function App() {
                 width: '8px',
                 height: '8px',
                 borderRadius: '50%',
-                backgroundColor: openRouterKey ? (keyValid !== false ? 'var(--success)' : 'var(--error)') : 'var(--border-color)',
-                boxShadow: openRouterKey && keyValid !== false ? '0 0 8px var(--success)' : 'none'
+                backgroundColor: (provider === 'OpenRouter' ? openRouterKey : ollamaBaseUrl) ? (keyValid !== false ? 'var(--success)' : 'var(--error)') : 'var(--border-color)',
+                boxShadow: (provider === 'OpenRouter' ? openRouterKey : ollamaBaseUrl) && keyValid !== false ? '0 0 8px var(--success)' : 'none'
               }}></div>
               <span style={{ fontSize: '0.75rem', color: showSettings ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: 500 }}>
-                {openRouterKey && keyValid !== false ? openRouterModel.split('/').pop().split(':')[0] : "Konfigurasi API"}
+                {keyValid !== false ? (provider === 'OpenRouter' ? openRouterModel.split('/').pop().split(':')[0] : ollamaModel) : "Konfigurasi AI"}
               </span>
               {validatingKey && <RefreshCw size={12} className="spin-animation" style={{ color: 'var(--text-secondary)' }} />}
             </div>
@@ -1039,7 +1142,7 @@ function App() {
             <span className="title-gradient">Pustaka+</span>
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', margin: '0 0 1.5rem 0' }}>
-            Verifikasi & Rangkuman Buku via OpenRouter
+            Verifikasi & Rangkuman Buku via {provider}
           </p>
 
         </header>
@@ -1065,101 +1168,118 @@ function App() {
               </button>
             </div>
 
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+              <button
+                onClick={() => { setProvider('OpenRouter'); validateApiKey(openRouterKey, true, 'OpenRouter'); }}
+                style={{
+                  background: 'none', border: 'none', color: provider === 'OpenRouter' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                  fontWeight: provider === 'OpenRouter' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
+                  borderBottom: provider === 'OpenRouter' ? '2px solid var(--accent-color)' : 'none'
+                }}
+              >
+                OpenRouter
+              </button>
+              <button
+                onClick={() => { setProvider('Ollama'); validateApiKey(null, true, 'Ollama', ollamaBaseUrl); }}
+                style={{
+                  background: 'none', border: 'none', color: provider === 'Ollama' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                  fontWeight: provider === 'Ollama' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
+                  borderBottom: provider === 'Ollama' ? '2px solid var(--accent-color)' : 'none'
+                }}
+              >
+                Ollama (Local)
+              </button>
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                  OpenRouter API Key
-                </label>
-                <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-                  <div style={{ position: 'relative', flex: 1 }}>
-                    <input
-                      type={showApiKey ? "text" : "password"}
-                      value={openRouterKey}
-                      onChange={(e) => setOpenRouterKey(e.target.value)}
-                      className="input-field"
-                      placeholder="sk-or-v1-..."
-                      style={{
-                        paddingRight: '3rem',
-                        marginBottom: 0,
-                        borderColor: keyValid === true ? 'var(--success)' : (keyValid === false ? 'var(--error)' : 'var(--border-color)')
-                      }}
-                    />
-                    <div style={{
-                      position: 'absolute',
-                      right: '0.5rem',
-                      top: '0',
-                      height: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      pointerEvents: 'none'
-                    }}>
-                      <button
-                        type="button"
-                        onClick={() => setShowApiKey(!showApiKey)}
+              {provider === 'OpenRouter' ? (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                    OpenRouter API Key
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        value={openRouterKey}
+                        onChange={(e) => setOpenRouterKey(e.target.value)}
+                        className="input-field"
+                        placeholder="sk-or-v1-..."
                         style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          padding: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          pointerEvents: 'auto',
-                          transition: 'color 0.2s'
+                          paddingRight: '3rem',
+                          marginBottom: 0,
+                          borderColor: keyValid === true ? 'var(--success)' : (keyValid === false ? 'var(--error)' : 'var(--border-color)')
                         }}
-                        title={showApiKey ? "Sembunyikan Key" : "Tampilkan Key"}
-                      >
-                        {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
+                      />
+                      <div style={{
+                        position: 'absolute', right: '0.5rem', top: '0', height: '100%',
+                        display: 'flex', alignItems: 'center', pointerEvents: 'none'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--text-secondary)',
+                            cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
+                          }}
+                        >
+                          {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => validateApiKey(openRouterKey, true)}
+                      disabled={validatingKey || !openRouterKey}
+                      className="btn-secondary"
+                      style={{ height: '42px', minWidth: '42px' }}
+                    >
+                      {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
+                    </button>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => validateApiKey(openRouterKey, true)}
-                    disabled={validatingKey || !openRouterKey}
-                    className="btn-secondary"
-                    style={{
-                      padding: '0 1.25rem',
-                      height: '42px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      whiteSpace: 'nowrap',
-                      minWidth: 'auto'
-                    }}
-                  >
-                    {validatingKey ? (
-                      <span className="spinner" style={{ width: '16px', height: '16px' }}></span>
-                    ) : (
-                      <RefreshCw size={14} className={validatingKey ? "spin-animation" : ""} />
-                    )}
-                  </button>
-
-                  {(keyValid === true || keyValid === false) && !validatingKey && (
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      {keyValid === true ? (
-                        <CheckCircle size={20} color="var(--success)" title="Key Valid" />
-                      ) : (
-                        <AlertCircle size={20} color="var(--error)" title="Key Invalid" />
-                      )}
-                    </div>
-                  )}
                 </div>
-                {keyError && <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '-0.5rem', marginBottom: '1rem', margin: 0 }}>{keyError}</p>}
-              </div>
+              ) : (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                    Ollama Base URL
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <input
+                      type="text"
+                      value={ollamaBaseUrl}
+                      onChange={(e) => setOllamaBaseUrl(e.target.value)}
+                      className="input-field"
+                      placeholder="http://localhost:11434"
+                      style={{ marginBottom: 0, flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => validateApiKey(null, true, 'Ollama', ollamaBaseUrl)}
+                      disabled={validatingKey}
+                      className="btn-secondary"
+                      style={{ height: '42px', minWidth: '42px' }}
+                    >
+                      {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                  Default AI Model
+                  Default AI Model ({provider})
                 </label>
                 <SearchableSelect
                   options={availableModels}
-                  value={openRouterModel}
+                  value={provider === 'OpenRouter' ? openRouterModel : ollamaModel}
                   onChange={(val) => {
-                    setOpenRouterModel(val);
-                    axios.post(`${API_BASE_URL}/config`, { openrouter_model: val });
+                    if (provider === 'OpenRouter') {
+                      setOpenRouterModel(val);
+                      saveConfig({ openrouter_model: val });
+                    } else {
+                      setOllamaModel(val);
+                      saveConfig({ ollama_model: val });
+                    }
                   }}
                   placeholder="Pilih model..."
                 />
@@ -1167,14 +1287,12 @@ function App() {
             </div>
 
             <div style={{
-              marginTop: '1.5rem',
-              paddingTop: '1rem',
-              borderTop: '1px solid rgba(255,255,255,0.05)',
-              display: 'flex',
-              justifyContent: 'flex-end'
+              marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)',
+              display: 'flex', justifyContent: 'flex-end'
             }}>
+              {keyError && <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginRight: 'auto' }}>{keyError}</p>}
               <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, fontStyle: 'italic' }}>
-                API Key disimpan secara lokal di file `.env` server.
+                Pengaturan disimpan secara otomatis.
               </p>
             </div>
           </div>
@@ -1306,6 +1424,7 @@ function App() {
                     <img
                       src={verificationResult.sources.find(s => s.image_url).image_url}
                       alt="Cover"
+                      className="sharp-image"
                       style={{ width: '100px', borderRadius: '4px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
                     />
                   </div>
@@ -1342,98 +1461,146 @@ function App() {
         )}
 
         {/* Summary Result Area */}
-        {summarizing && !summary && <SkeletonSummary />}
+        {summarizing && !summary && <SkeletonSummary status={streamingStatus} onStop={() => abortControllerRef.current?.abort()} />}
 
         {/* Summary Result */}
         {summary && (
-          <div className="glass-card animate-fade-in">
+          <div className="glass-card animate-fade-in summary-card">
             {/* Version Switcher if multiple versions available */}
             {currentBook && currentBook.summaries && currentBook.summaries.length > 1 && (
               <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
                   Versi Rangkuman (Pilih Model)
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  {currentBook.summaries.map((variant) => (
-                    <button
-                      key={variant.id}
-                      onClick={() => loadVariant(variant)}
-                      className={currentVariant && currentVariant.id === variant.id ? "btn-primary" : "btn-secondary"}
-                      style={{
-                        fontSize: '0.8rem',
-                        padding: '0.25rem 0.75rem',
-                        opacity: currentVariant && currentVariant.id === variant.id ? 1 : 0.7,
-                        minWidth: 'auto'
-                      }}
-                    >
-                      {variant.model ? variant.model.split('/').pop() : 'Unknown'}
-                    </button>
-                  ))}
-                </div>
+
+                {Object.entries(
+                  currentBook.summaries.reduce((acc, variant) => {
+                    const p = variant.usage_stats?.provider || 'Other';
+                    if (!acc[p]) acc[p] = [];
+                    acc[p].push(variant);
+                    return acc;
+                  }, {})
+                ).map(([providerName, variants]) => (
+                  <div key={providerName} style={{ marginBottom: providerName === Object.keys(currentBook.summaries.reduce((acc, v) => { const p = v.usage_stats?.provider || 'Other'; if (!acc[p]) acc[p] = []; acc[p].push(v); return acc; }, {})).pop() ? 0 : '0.75rem' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--accent-color)', marginBottom: '0.4rem', fontWeight: '600', opacity: 0.8 }}>
+                      {providerName.toUpperCase()}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {variants.map((variant) => (
+                        <button
+                          key={variant.id}
+                          onClick={() => loadVariant(variant)}
+                          className={currentVariant && currentVariant.id === variant.id ? "btn-primary" : "btn-secondary"}
+                          style={{
+                            fontSize: '0.8rem',
+                            padding: '0.25rem 0.75rem',
+                            opacity: currentVariant && currentVariant.id === variant.id ? 1 : 0.7,
+                            minWidth: 'auto',
+                            borderColor: currentVariant && currentVariant.id === variant.id ? 'var(--accent-color)' : ''
+                          }}
+                        >
+                          {variant.model ? variant.model.split('/').pop() : 'Unknown'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                {/* Book Cover in Header */}
-                {currentBook && currentBook.image_url && (
-                  <div style={{ flexShrink: 0, marginRight: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
-                    <img
-                      src={getImageUrl(currentBook.image_url)}
-                      alt="Cover"
-                      style={{ width: '80px', height: '120px', objectFit: 'cover', borderRadius: '4px' }}
-                      onError={(e) => e.target.style.display = 'none'}
-                    />
+            <div
+              ref={headerRef}
+              className={`sticky-summary-header ${isStuck ? 'is-stuck' : ''}`}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
+                  {/* Book Cover in Header - Container controlled by CSS transitions */}
+                  <div className="book-cover-container">
+                    {currentBook && currentBook.image_url ? (
+                      <img
+                        src={getImageUrl(currentBook.image_url, currentBook.last_updated)}
+                        alt="Cover"
+                        className="sharp-image"
+                        style={{ width: '100%', height: '120px', marginLeft: '20px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
+                        onError={(e) => e.target.style.display = 'none'}
+                      />
+                    ) : (
+                      verificationResult?.sources?.find(s => s.image_url) && (
+                        <img
+                          src={getImageUrl(verificationResult.sources.find(s => s.image_url).image_url, verificationResult.timestamp)}
+                          alt="Cover"
+                          className="sharp-image"
+                          style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
+                          onError={(e) => e.target.style.display = 'none'}
+                        />
+                      )
+                    )}
                   </div>
-                )}
-                {!currentBook && verificationResult && verificationResult.sources && verificationResult.sources.some(s => s.image_url) && (
-                  <div style={{ flexShrink: 0, marginRight: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
-                    <img
-                      src={getImageUrl(verificationResult.sources.find(s => s.image_url).image_url)}
-                      alt="Cover"
-                      style={{ width: '80px', height: '120px', objectFit: 'cover', borderRadius: '4px' }}
-                      onError={(e) => e.target.style.display = 'none'}
-                    />
-                  </div>
-                )}
 
-                <div style={{ flex: 1 }}>
-                  <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <Book size={24} color="var(--accent-color)" />
-                    {currentBook ? currentBook.title : verificationResult?.title}
-                  </h2>
-                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-                    {currentBook ? currentBook.title : (verificationResult?.sources[0]?.title || title)}
+                  <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: isStuck ? 'row' : 'column', alignItems: isStuck ? 'baseline' : 'stretch', gap: isStuck ? '0.75rem' : '0' }}>
+                    <h2 className="header-title" style={{ margin: '0', display: 'flex', alignItems: 'center', gap: '0.75rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <Book size={isStuck ? 14 : 20} color="var(--accent-color)" />
+                      {currentBook ? currentBook.title : (verificationResult?.sources?.[0]?.title || verificationResult?.title)}
+                    </h2>
+                    <div className="header-author" style={{ color: 'var(--text-secondary)', fontSize: isStuck ? '0.7rem' : '0.8rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {currentBook ? currentBook.author : (verificationResult?.sources[0]?.author || author)}
+                      </span>
+                      {summarizing && !isStuck && (
+                        <div className="token-badge-realtime animate-fade-in">
+                          <div className="pulse-dot"></div>
+                          <span>{tokensReceived} tokens</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <button
-                onClick={savedId ? handleDeleteCurrent : handleSaveSummary}
-                className={savedId ? "btn-danger" : "btn-primary"}
-                style={{
-                  fontSize: '0.9rem',
-                  padding: '0.5rem 1rem',
-                  backgroundColor: savedId ? 'var(--error)' : '',
-                  borderColor: savedId ? 'var(--error)' : '',
-                  color: savedId ? 'white' : ''
-                }}
-              >
-                {savedId ? (
-                  <><Trash2 size={16} style={{ marginRight: '8px' }} /> Hapus Versi Ini</>
-                ) : (
-                  <><Save size={16} style={{ marginRight: '8px' }} /> Simpan ke Pustaka</>
-                )}
-              </button>
+                <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                  {summarizing && summary && (
+                    <button
+                      onClick={() => abortControllerRef.current?.abort()}
+                      className="btn-danger"
+                      style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
+                    >
+                      <X size={14} style={{ marginRight: '4px' }} /> Stop
+                    </button>
+                  )}
+                  {!summarizing && summary && (
+                    <button
+                      onClick={savedId ? handleDeleteCurrent : handleSaveSummary}
+                      className={savedId ? "btn-danger" : "btn-primary"}
+                      style={{
+                        fontSize: '0.8rem',
+                        padding: '0.35rem 1rem',
+                        marginLeft: '5px',
+                        marginTop: '2px',
+                        marginBottom: '2px',
+                        marginRight: '20px',
+                        backgroundColor: savedId ? 'var(--error)' : '',
+                        borderColor: savedId ? 'var(--error)' : '',
+                        color: savedId ? 'white' : ''
+                      }}
+                    >
+                      {savedId ? (
+                        <><Trash2 size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '6px' }} /> {!isStuck && "Hapus"}</>
+                      ) : (
+                        <><Save size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '6px' }} /> {!isStuck && "Simpan"}</>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="markdown-content">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {summary}
               </ReactMarkdown>
+              {summarizing && summary && <span className="typing-cursor"></span>}
             </div>
 
-            {usageStats && (
+            {(usageStats || summarizing) && (
               <div style={{
                 marginTop: '2rem',
                 paddingTop: '1rem',
@@ -1448,12 +1615,12 @@ function App() {
               }}>
                 <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                   <span className="badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                    Provider: {usageStats.provider}
+                    Provider: {usageStats?.provider || provider}
                   </span>
                   <span className="badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                    Model: {usageStats.model.split('/').pop()}
+                    Model: {(usageStats?.model || (provider === 'OpenRouter' ? openRouterModel : ollamaModel)).split('/').pop()}
                   </span>
-                  {usageStats.cost_estimate && (
+                  {usageStats?.cost_estimate && (
                     <span className="badge" style={{
                       background: usageStats.cost_estimate.is_free ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.05)',
                       color: usageStats.cost_estimate.is_free ? 'var(--success)' : 'inherit',
@@ -1461,23 +1628,21 @@ function App() {
                     }}>
                       Biaya: {usageStats.cost_estimate.is_free ? "GRATIS" :
                         usageStats.cost_estimate.total_idr
-                          ? `Rp ${usageStats.cost_estimate.total_idr.toLocaleString('id-ID')} ($${usageStats.cost_estimate.total_usd})`
+                          ? `Rp ${usageStats.cost_estimate.total_idr.toLocaleString('id-ID')}($${usageStats.cost_estimate.total_usd})`
                           : (usageStats.cost_estimate.total_usd !== null ? `$${usageStats.cost_estimate.total_usd}` : "Estimasi N/A")
                       }
                     </span>
                   )}
-                  {usageStats.duration_seconds && (
+                  {usageStats?.duration_seconds && (
                     <span className="badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
                       Waktu: {usageStats.duration_seconds}s
                     </span>
                   )}
-                </div>
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <span>Prompt: {usageStats.tokens.prompt_tokens}</span>
-                  <span>Completion: {usageStats.tokens.completion_tokens}</span>
-                  <span style={{ fontWeight: 'bold', color: 'var(--accent-color)' }}>
-                    Total: {usageStats.tokens.total_tokens} Tokens
-                  </span>
+                  {usageStats?.tokens && (
+                    <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}>
+                      Token: {usageStats.tokens.total_tokens}
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -1587,105 +1752,95 @@ function App() {
                     Belum ada rangkuman tersimpan.
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1.5rem' }}>
                     {savedSummaries.map((book) => (
-                      <div key={book.id} className="glass-card" style={{ padding: '0', cursor: 'pointer', transition: 'transform 0.2s', border: '1px solid var(--border-color)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={() => loadFromLibrary(book)}>
+                      <div key={book.id} className="glass-card" style={{ padding: '0', cursor: 'pointer', transition: 'all 0.2s', border: '1px solid var(--border-color)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={() => loadFromLibrary(book)}>
                         <div style={{
-                          width: '100%', height: '140px', backgroundColor: 'var(--bg-secondary)',
+                          width: '100%', height: '260px', backgroundColor: 'var(--bg-secondary)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           overflow: 'hidden', flexShrink: 0, position: 'relative'
                         }}>
                           {book.image_url ? (
                             <img
-                              src={getImageUrl(book.image_url)}
+                              src={getImageUrl(book.image_url, book.last_updated)}
                               alt={book.title}
+                              className="sharp-image"
                               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                               onError={(e) => e.target.style.display = 'none'}
                             />
                           ) : (
-                            <Book size={32} color="var(--text-secondary)" opacity={0.3} />
+                            <Book size={48} color="var(--text-secondary)" opacity={0.3} />
                           )}
 
-                          <div
-                            className="cover-edit-btn"
-                            title="Ganti Cover"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCoverEditBook(book);
-                              setIsCoverModalOpen(true);
-                              setCoverSearchQuery(book.title);
-                            }}
-                            style={{
-                              position: 'absolute',
-                              top: '8px',
-                              right: '8px',
-                              background: 'rgba(0,0,0,0.6)',
-                              borderRadius: '50%',
-                              width: '32px',
-                              height: '32px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: 'white',
-                              cursor: 'pointer',
-                              zIndex: 10,
-                              backdropFilter: 'blur(4px)'
-                            }}
-                          >
-                            <Settings size={16} />
-                          </div>
+                          {/* Quick Actions Overlay */}
+                          <div className="card-overlay" style={{
+                            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                            background: 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 40%, rgba(0,0,0,0.6) 100%)',
+                            opacity: 1, transition: 'opacity 0.2s',
+                          }}>
+                            <div
+                              className="cover-edit-btn"
+                              title="Ganti Cover"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCoverEditBook(book);
+                                setIsCoverModalOpen(true);
+                              }}
+                              style={{
+                                position: 'absolute', top: '8px', right: '8px',
+                                background: 'rgba(0,0,0,0.6)', borderRadius: '50%',
+                                width: '32px', height: '32px', display: 'flex',
+                                alignItems: 'center', justifyContent: 'center', color: 'white',
+                                zIndex: 10, backdropFilter: 'blur(4px)'
+                              }}
+                            >
+                              <Settings size={16} />
+                            </div>
 
-                          <div
-                            className="metadata-edit-btn"
-                            title="Edit Info Buku"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMetadataEditBook(book);
-                              setMetadataTitle(book.title);
-                              setMetadataAuthor(book.author);
-                              setMetadataIsbn(book.isbn || "");
-                              setIsMetadataModalOpen(true);
-                            }}
-                            style={{
-                              position: 'absolute',
-                              top: '8px',
-                              left: '8px',
-                              background: 'rgba(0,0,0,0.6)',
-                              borderRadius: '50%',
-                              width: '32px',
-                              height: '32px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: 'white',
-                              cursor: 'pointer',
-                              zIndex: 10,
-                              backdropFilter: 'blur(4px)'
-                            }}
-                          >
-                            <PenTool size={16} />
+                            <div
+                              className="metadata-edit-btn"
+                              title="Edit Info Buku"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMetadataEditBook(book);
+                                setMetadataTitle(book.title);
+                                setMetadataAuthor(book.author);
+                                setMetadataIsbn(book.isbn || "");
+                                setIsMetadataModalOpen(true);
+                              }}
+                              style={{
+                                position: 'absolute', top: '8px', left: '8px',
+                                background: 'rgba(0,0,0,0.6)', borderRadius: '50%',
+                                width: '32px', height: '32px', display: 'flex',
+                                alignItems: 'center', justifyContent: 'center', color: 'white',
+                                zIndex: 10, backdropFilter: 'blur(4px)'
+                              }}
+                            >
+                              <PenTool size={16} />
+                            </div>
                           </div>
                         </div>
 
-                        <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                          <h4 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5rem' }} title={book.title}>
+                        <div style={{ padding: '0.85rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                          <h4 style={{
+                            margin: '0 0 0.35rem 0', color: 'var(--text-primary)',
+                            fontSize: '0.95rem', fontWeight: '600',
+                            overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box',
+                            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5rem'
+                          }} title={book.title}>
                             {book.title}
                           </h4>
-                          <p style={{ margin: '0 0 1rem 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{book.author}</p>
+                          <p style={{ margin: '0 0 0.75rem 0', color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{book.author}</p>
 
-                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>{new Date(book.last_updated).toLocaleDateString()}</span>
-                            <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '0.75rem' }}>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '0.7rem' }}>
                               {book.summaries.length} Versi
                             </span>
-                          </div>
-
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', marginTop: '0.75rem' }}>
                             <button
                               onClick={(e) => handleDeleteBook(book.id, e)}
-                              style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '0.85rem' }}
+                              style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '0.75rem', opacity: 0.7 }}
                             >
-                              <Trash2 size={14} style={{ marginRight: '4px' }} /> Hapus Buku
+                              <Trash2 size={12} style={{ marginRight: '4px' }} /> Hapus
                             </button>
                           </div>
                         </div>
@@ -1722,7 +1877,7 @@ function App() {
       <SimpleModal
         isOpen={deleteConfirmOpen}
         title="Hapus Buku?"
-        message={`Apakah Anda yakin ingin menghapus buku "${bookToDelete?.title}" dan semua ringkasannya?`}
+        message={`Apakah Anda yakin ingin menghapus buku "${bookToDelete?.title}" dan semua ringkasannya ? `}
         confirmText="Hapus"
         isDanger={true}
         onClose={() => setDeleteConfirmOpen(false)}
@@ -1736,8 +1891,20 @@ function App() {
         onSave={handleUpdateCover}
       />
 
-      <MetadataEditModal />
-      <LoadingOverlay />
+      <MetadataEditModal
+        isOpen={isMetadataModalOpen}
+        book={metadataEditBook}
+        title={metadataTitle}
+        author={metadataAuthor}
+        isbn={metadataIsbn}
+        setTitle={setMetadataTitle}
+        setAuthor={setMetadataAuthor}
+        setIsbn={setMetadataIsbn}
+        onSave={handleUpdateMetadata}
+        onClose={() => setIsMetadataModalOpen(false)}
+        isSaving={isSavingMetadata}
+      />
+      <LoadingOverlay summarizing={summarizing && !summary} />
 
       {
         toast && (
