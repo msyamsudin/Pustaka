@@ -245,7 +245,7 @@ class BookSummarizer:
            * Genre / Topik: [Genre Spesifik]
            * Sumber: {source_note}
 
-        2. **Ringkasan Inti (DENSE Executive Summary)**
+        2. **Ringkasan Inti**
            [Tuliskan 3–4 paragraf yang sangat padat informasi. Setiap kalimat harus mengandung setidaknya satu konsep spesifik atau fakta nyata dari buku. Jangan gunakan bahasa brosur/pemasaran. Fokus pada "Mekanisme" dan "Logika" buku.]
 
         3. **Poin Kunci & Argumen Utama**
@@ -260,17 +260,17 @@ class BookSummarizer:
            **Bagian 2: [Judul Spesifik]**
            * [Poin detail]
 
-        5. **Konsep & Istilah Teknikal (Glossary of Density)**
+        5. **Konsep & Istilah Teknikal**
            * **[Istilah Spesifik 1]** → [Definisi mendalam & aplikasi dalam buku]
            * **[Istilah Spesifik 2]** → [Definisi mendalam & aplikasi dalam buku]
            * [Total 5-7 istilah]
 
-        6. **Kerangka Logika (The Blueprint)**
+        6. **Kerangka Logika**
            * **Masalah Awal**: [Apa akar masalahnya?]
            * **Metodologi/Solusi**: [Bagaimana penulis memecahkannya?]
            * **Sintesis Akal**: [Apa kesimpulan intelektualnya?]
 
-        7. **Actionable Insights / Implikasi**
+        7. **Insight & Implikasi**
            * [Insight 1: Harus konkret, bukan filosofis umum]
            * [Insight 2: Harus konkret]
 
@@ -280,7 +280,7 @@ class BookSummarizer:
         9. **Tingkat Abstraksi & Klasifikasi**
            * [Apakah ini Taksonomi, Manual Praktis, atau Dialektika Teoretis?]
 
-        10. **TL;DR (Ultrapure Essence)**
+        10. **TL;DR**
             [Satu paragraf maksimal 150 kata yang merangkum keseluruhan sistem pemikiran buku tanpa sisa.]
 
         ═══════════════════════════════════════════════════════════════
@@ -291,6 +291,7 @@ class BookSummarizer:
         - SPESIFIK: Jangan bilang "Habit sangat penting", katakan "Atomic habits bekerja melalui mekanisme 'Environment Design' dan 'Identity-based change'".
         - JANGAN mengulang instruksi ini dalam jawaban.
         - JANGAN memberikan meta-komentar, catatan penutup, deklarasi kata, atau obrolan di luar format (contoh yang DILARANG: "Rangkuman selesai", "Semoga bermanfaat", "(X kata)", dll).
+        - JANGAN menulis judul/header seperti "RANGKUMAN PADAT: [Judul]", "RANGKUMAN KOMPREHENSIF", atau sejenisnya di awal output. Langsung mulai dengan format yang diminta (Bagian 1).
         - Fokus 100% pada konten rangkuman. Jangan bicara soal proses Anda menulisnya.
         """
         
@@ -406,8 +407,12 @@ class BookSummarizer:
             r"\(Selesai.*?\)",
             r"\(Catatan:.*?\)",
             r"Rangkuman selesai.*$",
+            r"\(Catatan:.*?\)",
+            r"Rangkuman selesai.*$",
             r"Semoga bermanfaat.*$",
-            r"Selesai\.$"
+            r"Selesai\.$",
+            r"^RANGKUMAN (PADAT|KOMPREHENSIF|EKSEKUTIF|DENSE).*?:\s.*?$",
+            r"^RANGKUMAN (PADAT|KOMPREHENSIF|EKSEKUTIF|DENSE).*?$"
         ]
         for p in meta_patterns:
             cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE | re.MULTILINE)

@@ -1121,8 +1121,19 @@ function App() {
                 backgroundColor: (provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : ollamaBaseUrl)) ? (keyValid !== false ? 'var(--success)' : 'var(--error)') : 'var(--border-color)',
                 boxShadow: (provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : ollamaBaseUrl)) && keyValid !== false ? '0 0 8px var(--success)' : 'none'
               }}></div>
-              <span style={{ fontSize: '0.75rem', color: showSettings ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: 500 }}>
-                {keyValid !== false ? (provider === 'OpenRouter' ? openRouterModel.split('/').pop().split(':')[0] : (provider === 'Groq' ? groqModel : ollamaModel)) : "Konfigurasi AI"}
+              <span
+                title={keyValid !== false ? `${provider}: ${provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)}` : "Konfigurasi AI"}
+                style={{
+                  fontSize: '0.75rem',
+                  color: showSettings ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  fontWeight: 500,
+                  maxWidth: '180px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {keyValid !== false ? `${provider}: ${provider === 'OpenRouter' ? openRouterModel.split('/').pop().split(':')[0] : (provider === 'Groq' ? groqModel : ollamaModel)}` : "Konfigurasi AI"}
               </span>
               {validatingKey && <RefreshCw size={12} className="spin-animation" style={{ color: 'var(--text-secondary)' }} />}
             </div>
@@ -1163,9 +1174,6 @@ function App() {
           <h1 style={{ fontSize: '3rem', margin: '0 0 0.5rem 0' }}>
             <span className="title-gradient">Pustaka+</span>
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', margin: '0 0 1.5rem 0' }}>
-            Verifikasi & Rangkuman Buku via {provider}
-          </p>
 
         </header>
 
@@ -1920,6 +1928,20 @@ function App() {
                   {!summarizing && summary && (
                     <>
                       <button
+                        onClick={() => handleSummarize(false)}
+                        className="btn-secondary"
+                        title="Generate Ulang"
+                        style={{
+                          padding: '0.35rem 0.7rem',
+                          marginLeft: '5px',
+                          marginTop: '2px',
+                          marginBottom: '2px',
+                          marginRight: '2px'
+                        }}
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                      <button
                         onClick={handleCopy}
                         className="btn-secondary"
                         title={copied ? "Tersalin!" : "Salin Rangkuman"}
@@ -1975,7 +1997,7 @@ function App() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>
                   <div className="spinner" style={{ width: '16px', height: '16px' }}></div>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{streamingStatus}</span>
-                  <span className="typing-cursor"></span>
+
                 </div>
               )}
             </div>
