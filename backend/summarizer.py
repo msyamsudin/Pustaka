@@ -283,6 +283,8 @@ class BookSummarizer:
         - DENSITY: Jika ada kalimat yang bisa dihapus tanpa kehilangan informasi spesifik, hapus atau ganti dengan informasi yang lebih padat.
         - SPESIFIK: Jangan bilang "Habit sangat penting", katakan "Atomic habits bekerja melalui mekanisme 'Environment Design' dan 'Identity-based change'".
         - JANGAN mengulang instruksi ini dalam jawaban.
+        - JANGAN memberikan meta-komentar, catatan penutup, deklarasi kata, atau obrolan di luar format (contoh yang DILARANG: "Rangkuman selesai", "Semoga bermanfaat", "(X kata)", dll).
+        - Fokus 100% pada konten rangkuman. Jangan bicara soal proses Anda menulisnya.
         """
         
         if partial_content:
@@ -389,4 +391,18 @@ class BookSummarizer:
         
         # Cleanup extra newlines
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+        # Remove trailing conversational meta-commentary
+        # Patterns like: (Rangkuman selesai...), Catatan: ..., Semoga bermanfaat...
+        meta_patterns = [
+            r"\(Rangkuman selesai.*?\)", # (Rangkuman selesai — 148 kata...)
+            r"\(Selesai.*?\)",
+            r"\(Catatan:.*?\)",
+            r"Rangkuman selesai.*$",
+            r"Semoga bermanfaat.*$",
+            r"Selesai\.$"
+        ]
+        for p in meta_patterns:
+            cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
+
         return cleaned.strip()

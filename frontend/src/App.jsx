@@ -917,7 +917,7 @@ function App() {
       setStreamingStatus(isResume ? "Melanjutkan penulisan..." : "AI sedang menganalisis struktur buku...");
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let accumulatedSummary = isResume ? summary : "";
+      let accumulatedSummary = (isResume === true && summary) ? summary : "";
       let tokenCount = isResume ? tokensReceived : 0;
       let firstChunk = true;
 
@@ -1470,7 +1470,7 @@ function App() {
                 <div style={{ flex: 1, textAlign: 'center', alignSelf: 'center' }}>
                   {!summary && (
                     <button
-                      onClick={handleSummarize}
+                      onClick={() => handleSummarize(false)}
                       className="btn-primary"
                       disabled={summarizing}
                       style={{
@@ -1607,9 +1607,12 @@ function App() {
                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {currentBook ? currentBook.author : (verificationResult?.sources[0]?.author || author)}
                       </span>
-                      {summarizing && !isStuck && (
-                        <div className="token-badge-realtime animate-fade-in">
-                          <div className="pulse-dot"></div>
+                      {summarizing && (
+                        <div className="token-badge-realtime animate-fade-in" style={{
+                          padding: isStuck ? '0.1rem 0.5rem' : '0.25rem 0.75rem',
+                          fontSize: isStuck ? '0.65rem' : '0.75rem'
+                        }}>
+                          <div className="pulse-dot" style={{ width: isStuck ? '4px' : '6px', height: isStuck ? '4px' : '6px' }}></div>
                           <span>{tokensReceived} tokens</span>
                         </div>
                       )}
