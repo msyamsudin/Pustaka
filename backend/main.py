@@ -45,6 +45,7 @@ class ConfigRequest(BaseModel):
     ollama_model: Optional[str] = None
     groq_key: Optional[str] = None
     groq_model: Optional[str] = None
+    ollama_base_url: Optional[str] = None
     provider: Optional[str] = None
 
 class CoverUpdateRequest(BaseModel):
