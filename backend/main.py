@@ -42,8 +42,9 @@ class VerificationRequest(BaseModel):
 class ConfigRequest(BaseModel):
     openrouter_key: Optional[str] = None
     openrouter_model: Optional[str] = None
-    ollama_base_url: Optional[str] = None
     ollama_model: Optional[str] = None
+    groq_key: Optional[str] = None
+    groq_model: Optional[str] = None
     provider: Optional[str] = None
 
 class CoverUpdateRequest(BaseModel):
@@ -78,6 +79,10 @@ def update_config(req: ConfigRequest):
         current_config["ollama_base_url"] = req.ollama_base_url
     if req.ollama_model is not None:
         current_config["ollama_model"] = req.ollama_model
+    if req.groq_key is not None:
+        current_config["groq_key"] = req.groq_key
+    if req.groq_model is not None:
+        current_config["groq_model"] = req.groq_model
     if req.provider is not None:
         current_config["provider"] = req.provider
         
@@ -112,8 +117,8 @@ def summarize_book(req: SummarizationRequest):
     config = config_manager.load_config()
     
     provider = req.provider or config.get("provider", "OpenRouter")
-    api_key = req.api_key or config.get("openrouter_key")
-    model = req.model or config.get("openrouter_model")
+    api_key = req.api_key or (config.get("openrouter_key") if provider == "OpenRouter" else config.get("groq_key"))
+    model = req.model or (config.get("openrouter_model") if provider == "OpenRouter" else config.get("groq_model"))
     base_url = req.base_url or config.get("ollama_base_url")
 
     # If Ollama, model might be different
@@ -158,6 +163,22 @@ def list_models(req: Dict):
             return {"valid": True, "models": model_ids}
         except Exception as e:
             raise HTTPException(status_code=401, detail=f"OpenRouter Error: {str(e)}")
+    
+    elif provider == "Groq":
+        if not api_key:
+             raise HTTPException(status_code=400, detail="Groq API Key is required")
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                base_url="https://api.groq.com/openai/v1",
+                api_key=api_key
+            )
+            models = client.models.list()
+            model_ids = [m.id for m in models.data]
+            model_ids.sort()
+            return {"valid": True, "models": model_ids}
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"Groq Error: {str(e)}")
     
     elif provider == "Ollama":
         import requests

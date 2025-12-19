@@ -15,7 +15,9 @@ class ConfigManager:
                 "openrouter_key": "",
                 "openrouter_model": "google/gemini-2.0-flash-exp:free",
                 "ollama_base_url": "http://localhost:11434",
-                "ollama_model": "llama3"
+                "ollama_model": "llama3",
+                "groq_key": "",
+                "groq_model": "llama-3.3-70b-versatile"
             })
 
     def load_config(self) -> Dict:

@@ -438,6 +438,8 @@ function App() {
   const [openRouterModel, setOpenRouterModel] = useState('google/gemini-2.0-flash-exp:free');
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434');
   const [ollamaModel, setOllamaModel] = useState('llama3');
+  const [groqKey, setGroqKey] = useState('');
+  const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile');
   const [availableModels, setAvailableModels] = useState([]);
   const [keyValid, setKeyValid] = useState(null); // null, true, false
   const [keyError, setKeyError] = useState('');
@@ -561,10 +563,15 @@ function App() {
           if (configRes.data.ollama_base_url) setOllamaBaseUrl(configRes.data.ollama_base_url);
           if (configRes.data.ollama_model) setOllamaModel(configRes.data.ollama_model);
 
+          if (configRes.data.groq_key) setGroqKey(configRes.data.groq_key);
+          if (configRes.data.groq_model) setGroqModel(configRes.data.groq_model);
+
           // Initial model fetch based on active provider
           const activeProvider = configRes.data.provider || 'OpenRouter';
           if (activeProvider === 'OpenRouter' && configRes.data.openrouter_key) {
             validateApiKey(configRes.data.openrouter_key, false, 'OpenRouter');
+          } else if (activeProvider === 'Groq' && configRes.data.groq_key) {
+            validateApiKey(configRes.data.groq_key, false, 'Groq');
           } else if (activeProvider === 'Ollama') {
             validateApiKey(null, false, 'Ollama', configRes.data.ollama_base_url || 'http://localhost:11434');
           }
@@ -770,6 +777,7 @@ function App() {
           saveConfig({
             provider: targetProvider,
             openrouter_key: targetProvider === 'OpenRouter' ? key : openRouterKey,
+            groq_key: targetProvider === 'Groq' ? key : groqKey,
             ollama_base_url: targetProvider === 'Ollama' ? baseUrl : ollamaBaseUrl
           });
         }
@@ -800,6 +808,9 @@ function App() {
     if (provider === 'OpenRouter') {
       setOpenRouterModel(newModel);
       saveConfig({ openrouter_model: newModel });
+    } else if (provider === 'Groq') {
+      setGroqModel(newModel);
+      saveConfig({ groq_model: newModel });
     } else {
       setOllamaModel(newModel);
       saveConfig({ ollama_model: newModel });
@@ -860,14 +871,15 @@ function App() {
     });
 
     if (existingBook) {
-      const found = existingBook.summaries.find(s => s.model === openRouterModel);
+      const currentActiveModel = provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel);
+      const found = existingBook.summaries.find(s => s.model === currentActiveModel);
       if (found) {
         setExistingSummary({ book: existingBook, variant: found });
         return;
       }
     }
     setExistingSummary(null);
-  }, [verificationResult, openRouterModel, isbn, title, author, savedSummaries]);
+  }, [verificationResult, provider, openRouterModel, groqModel, ollamaModel, isbn, title, author, savedSummaries]);
 
   const handleSummarize = async (isResume = false) => {
     if (existingSummary && !isResume) {
@@ -902,8 +914,8 @@ function App() {
         body: JSON.stringify({
           metadata: verificationResult.sources,
           provider: provider,
-          api_key: provider === 'OpenRouter' ? openRouterKey : null,
-          model: provider === 'OpenRouter' ? openRouterModel : ollamaModel,
+          api_key: provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : null),
+          model: provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel),
           base_url: provider === 'Ollama' ? ollamaBaseUrl : null,
           partial_content: isResume ? summary : null
         }),
@@ -1131,11 +1143,11 @@ function App() {
                 width: '8px',
                 height: '8px',
                 borderRadius: '50%',
-                backgroundColor: (provider === 'OpenRouter' ? openRouterKey : ollamaBaseUrl) ? (keyValid !== false ? 'var(--success)' : 'var(--error)') : 'var(--border-color)',
-                boxShadow: (provider === 'OpenRouter' ? openRouterKey : ollamaBaseUrl) && keyValid !== false ? '0 0 8px var(--success)' : 'none'
+                backgroundColor: (provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : ollamaBaseUrl)) ? (keyValid !== false ? 'var(--success)' : 'var(--error)') : 'var(--border-color)',
+                boxShadow: (provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : ollamaBaseUrl)) && keyValid !== false ? '0 0 8px var(--success)' : 'none'
               }}></div>
               <span style={{ fontSize: '0.75rem', color: showSettings ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: 500 }}>
-                {keyValid !== false ? (provider === 'OpenRouter' ? openRouterModel.split('/').pop().split(':')[0] : ollamaModel) : "Konfigurasi AI"}
+                {keyValid !== false ? (provider === 'OpenRouter' ? openRouterModel.split('/').pop().split(':')[0] : (provider === 'Groq' ? groqModel : ollamaModel)) : "Konfigurasi AI"}
               </span>
               {validatingKey && <RefreshCw size={12} className="spin-animation" style={{ color: 'var(--text-secondary)' }} />}
             </div>
@@ -1215,6 +1227,16 @@ function App() {
                 OpenRouter
               </button>
               <button
+                onClick={() => { setProvider('Groq'); validateApiKey(groqKey, true, 'Groq'); }}
+                style={{
+                  background: 'none', border: 'none', color: provider === 'Groq' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                  fontWeight: provider === 'Groq' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
+                  borderBottom: provider === 'Groq' ? '2px solid var(--accent-color)' : 'none'
+                }}
+              >
+                Groq
+              </button>
+              <button
                 onClick={() => { setProvider('Ollama'); validateApiKey(null, true, 'Ollama', ollamaBaseUrl); }}
                 style={{
                   background: 'none', border: 'none', color: provider === 'Ollama' ? 'var(--accent-color)' : 'var(--text-secondary)',
@@ -1273,6 +1295,52 @@ function App() {
                     </button>
                   </div>
                 </div>
+              ) : provider === 'Groq' ? (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                    Groq API Key
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        value={groqKey}
+                        onChange={(e) => setGroqKey(e.target.value)}
+                        className="input-field"
+                        placeholder="gsk_..."
+                        style={{
+                          paddingRight: '3rem',
+                          marginBottom: 0,
+                          borderColor: keyValid === true ? 'var(--success)' : (keyValid === false ? 'var(--error)' : 'var(--border-color)')
+                        }}
+                      />
+                      <div style={{
+                        position: 'absolute', right: '0.5rem', top: '0', height: '100%',
+                        display: 'flex', alignItems: 'center', pointerEvents: 'none'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--text-secondary)',
+                            cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
+                          }}
+                        >
+                          {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => validateApiKey(groqKey, true, 'Groq')}
+                      disabled={validatingKey || !groqKey}
+                      className="btn-secondary"
+                      style={{ height: '42px', minWidth: '42px' }}
+                    >
+                      {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
@@ -1306,11 +1374,14 @@ function App() {
                 </label>
                 <SearchableSelect
                   options={availableModels}
-                  value={provider === 'OpenRouter' ? openRouterModel : ollamaModel}
+                  value={provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)}
                   onChange={(val) => {
                     if (provider === 'OpenRouter') {
                       setOpenRouterModel(val);
                       saveConfig({ openrouter_model: val });
+                    } else if (provider === 'Groq') {
+                      setGroqModel(val);
+                      saveConfig({ groq_model: val });
                     } else {
                       setOllamaModel(val);
                       saveConfig({ ollama_model: val });

@@ -27,13 +27,20 @@ class BookSummarizer:
                 timeout=float(self.timeout),
                 max_retries=self.max_retries
             )
+        elif self.provider == "Groq" and self.api_key:
+            self.client = OpenAI(
+                base_url="https://api.groq.com/openai/v1",
+                api_key=self.api_key,
+                timeout=float(self.timeout),
+                max_retries=self.max_retries
+            )
         elif self.provider == "Ollama":
              self.base_url = self.base_url or "http://localhost:11434"
              self.model_name = self.model_name or "llama3"
 
     def summarize(self, book_metadata: List[Dict]) -> Dict:
-        if self.provider == "OpenRouter" and not self.api_key:
-            return {"error": "Error: API Key tidak ditemukan."}
+        if self.provider in ["OpenRouter", "Groq"] and not self.api_key:
+            return {"error": f"Error: API Key {self.provider} tidak ditemukan."}
 
         # Consolidated metadata
         primary_info = book_metadata[0]
@@ -88,7 +95,7 @@ class BookSummarizer:
                     "total_tokens": usage.total_tokens
                 },
                 "model": self.model_name,
-                "provider": "OpenRouter",
+                "provider": self.provider,
                 "cost_estimate": self._calculate_cost(usage.prompt_tokens, usage.completion_tokens),
                 "duration_seconds": duration
             }
@@ -97,8 +104,8 @@ class BookSummarizer:
 
     def summarize_stream(self, book_metadata: List[Dict], partial_content: str = None):
         """Generator that yields chunks of the summary."""
-        if self.provider == "OpenRouter" and not self.api_key:
-            yield f"data: {json.dumps({'error': 'Error: API Key tidak ditemukan.'})}\n\n"
+        if self.provider in ["OpenRouter", "Groq"] and not self.api_key:
+            yield f"data: {json.dumps({'error': f'Error: API Key {self.provider} tidak ditemukan.'})}\n\n"
             return
 
         # Consolidated metadata
@@ -153,7 +160,7 @@ class BookSummarizer:
                     'done': True, 
                     'duration_seconds': duration, 
                     'model': self.model_name, 
-                    'provider': 'OpenRouter'
+                    'provider': self.provider
                 }
                 
                 if final_usage:
