@@ -1019,6 +1019,25 @@ function App() {
     localStorage.setItem('searchHistory', JSON.stringify(newHistory));
   };
 
+  // Helper for Average Duration
+  const getAverageDuration = (targetProvider) => {
+    let totalSeconds = 0;
+    let count = 0;
+
+    savedSummaries.forEach(book => {
+      book.summaries.forEach(s => {
+        const p = s.usage_stats?.provider || s.provider;
+        if (p === targetProvider && s.usage_stats?.duration_seconds) {
+          totalSeconds += s.usage_stats.duration_seconds;
+          count++;
+        }
+      });
+    });
+
+    if (count === 0) return null;
+    return (totalSeconds / count).toFixed(1);
+  };
+
   const clearHistory = () => {
     setHistory([]);
     localStorage.removeItem('searchHistory');
@@ -1843,8 +1862,13 @@ function App() {
                   }, {})
                 ).map(([providerName, variants]) => (
                   <div key={providerName} style={{ marginBottom: providerName === Object.keys(currentBook.summaries.reduce((acc, v) => { const p = v.usage_stats?.provider || 'Other'; if (!acc[p]) acc[p] = []; acc[p].push(v); return acc; }, {})).pop() ? 0 : '0.75rem' }}>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--accent-color)', marginBottom: '0.4rem', fontWeight: '600', opacity: 0.8 }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--accent-color)', marginBottom: '0.4rem', fontWeight: '600', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {providerName.toUpperCase()}
+                      {getAverageDuration(providerName) && (
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal', fontSize: '0.65rem' }}>
+                          (Rata-rata: {getAverageDuration(providerName)}s)
+                        </span>
+                      )}
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       {variants.map((variant) => (
