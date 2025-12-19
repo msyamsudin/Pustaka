@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, PenTool, Eye, EyeOff } from 'lucide-react';
+import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, PenTool, Eye, EyeOff, Copy, Check } from 'lucide-react';
 
 const API_BASE_URL = "http://127.0.0.1:8000/api";
 
@@ -450,6 +450,7 @@ function App() {
   const [savedSummaries, setSavedSummaries] = useState([]);
   const [showIsbn, setShowIsbn] = useState(false);
   const [history, setHistory] = useState([]);
+  const [copied, setCopied] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [savedId, setSavedId] = useState(null); // Track if current summary is saved
 
@@ -1035,6 +1036,15 @@ function App() {
     setError(null);
     setCurrentBook(null);
     setCurrentVariant(null);
+    setCopied(false);
+  };
+
+  const handleCopy = () => {
+    if (!summary) return;
+    navigator.clipboard.writeText(summary);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    showToast("Berhasil disalin ke clipboard!", "success");
   };
 
   const handleUpdateMetadata = async () => {
@@ -1625,27 +1635,50 @@ function App() {
                     </button>
                   )}
                   {!summarizing && summary && (
-                    <button
-                      onClick={savedId ? handleDeleteCurrent : handleSaveSummary}
-                      className={savedId ? "btn-danger" : "btn-primary"}
-                      style={{
-                        fontSize: '0.8rem',
-                        padding: '0.35rem 1rem',
-                        marginLeft: '5px',
-                        marginTop: '2px',
-                        marginBottom: '2px',
-                        marginRight: '20px',
-                        backgroundColor: savedId ? 'var(--error)' : '',
-                        borderColor: savedId ? 'var(--error)' : '',
-                        color: savedId ? 'white' : ''
-                      }}
-                    >
-                      {savedId ? (
-                        <><Trash2 size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '6px' }} /> {!isStuck && "Hapus"}</>
-                      ) : (
-                        <><Save size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '6px' }} /> {!isStuck && "Simpan"}</>
-                      )}
-                    </button>
+                    <>
+                      <button
+                        onClick={handleCopy}
+                        className="btn-secondary"
+                        title={copied ? "Tersalin!" : "Salin Rangkuman"}
+                        style={{
+                          padding: '0.35rem 0.7rem',
+                          marginLeft: '5px',
+                          marginTop: '2px',
+                          marginBottom: '2px',
+                          marginRight: '2px',
+                          borderColor: copied ? 'var(--success)' : ''
+                        }}
+                      >
+                        {copied ? (
+                          <Check size={14} color="var(--success)" />
+                        ) : (
+                          <Copy size={14} />
+                        )}
+                      </button>
+
+                      <button
+                        onClick={savedId ? handleDeleteCurrent : handleSaveSummary}
+                        className={savedId ? "btn-danger" : "btn-primary"}
+                        title={savedId ? "Hapus Rangkuman" : "Simpan Rangkuman"}
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: savedId ? '0.35rem 0.7rem' : '0.35rem 1rem',
+                          marginLeft: '0',
+                          marginTop: '2px',
+                          marginBottom: '2px',
+                          marginRight: '20px',
+                          backgroundColor: savedId ? 'var(--error)' : '',
+                          borderColor: savedId ? 'var(--error)' : '',
+                          color: savedId ? 'white' : ''
+                        }}
+                      >
+                        {savedId ? (
+                          <Trash2 size={14} />
+                        ) : (
+                          <><Save size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '6px' }} /> {!isStuck && "Simpan"}</>
+                        )}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
