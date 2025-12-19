@@ -88,11 +88,12 @@ def update_config(req: ConfigRequest):
 @app.post("/api/verify")
 def verify_book(req: VerificationRequest):
     verifier = BookVerifier()
-    is_valid, sources, message = verifier.validate_book(req.isbn, req.title, req.author)
+    is_valid, sources, message, status = verifier.validate_book(req.isbn, req.title, req.author)
     return {
         "is_valid": is_valid,
         "sources": sources,
-        "message": message
+        "message": message,
+        "status": status
     }
 
 

@@ -104,11 +104,11 @@ class BookVerifier:
                 return ident["identifier"]
         return ""
 
-    def validate_book(self, isbn: str = "", title: str = "", author: str = "") -> Tuple[bool, List[Dict], str]:
+    def validate_book(self, isbn: str = "", title: str = "", author: str = "") -> Tuple[bool, List[Dict], str, str]:
         """
         Validates book existence using multiple sources.
         Checks local storage and cache first, then external APIs.
-        Returns: (is_verified, info_sources, message)
+        Returns: (is_verified, info_sources, message, status)
         """
         from storage_manager import StorageManager
         from cache_manager import CacheManager
@@ -140,7 +140,7 @@ class BookVerifier:
                     "image_url": book.get('image_url', ''),
                     "description": "Buku ini sudah ada di perpustakaan Anda."
                 }
-                return True, [cached_source], "Verifikasi Berhasil (Ditemukan di Perpustakaan)"
+                return True, [cached_source], "Verifikasi Berhasil (Ditemukan di Perpustakaan)", "success"
 
         # 2. Check Verification Cache (CacheManager)
         cached_book = cache_manager.get_cached_book(isbn, title, author)
@@ -148,10 +148,13 @@ class BookVerifier:
             # Wrap in source format
             cached_source = cached_book.copy()
             cached_source["source"] = f"{cached_book.get('source', 'Sesi Sebelumnya')} (Cached)"
-            return True, [cached_source], "Verifikasi Berhasil (Ditemukan di Cache)"
+            return True, [cached_source], "Verifikasi Berhasil (Ditemukan di Cache)", "success"
 
         # 3. External API Calls
         sources = []
+        
+        # We perform 2 checks currently
+        total_sources_to_check = 2
         
         gb_data = self.check_google_books(isbn, title, author)
         if gb_data:
@@ -162,16 +165,17 @@ class BookVerifier:
             sources.append(ol_data)
             
         # Verification Logic
-        if len(sources) >= 2:
+        if len(sources) >= total_sources_to_check:
             # Cache the first successful result
             cache_manager.save_to_cache(sources[0])
-            return True, sources, "Verifikasi Berhasil (2+ Sumber)"
-        elif len(sources) == 1:
+            return True, sources, f"Verifikasi Berhasil (Ditemukan di {len(sources)} sumber)", "success"
+        elif len(sources) > 0:
             # Also cache partial results for speed next time
             cache_manager.save_to_cache(sources[0])
-            return False, sources, "Verifikasi Parsial (1 Sumber)"
+            # Partial verification: still True as per user request
+            return True, sources, f"Verifikasi Parsial ({len(sources)} dari {total_sources_to_check} sumber ditemukan)", "warning"
         else:
-            return False, [], "Tidak Ditemukan di Sumber Manapun"
+            return False, [], "Tidak Ditemukan di Sumber Manapun", "error"
 
     def search_book_covers(self, query: str) -> List[Dict]:
         """

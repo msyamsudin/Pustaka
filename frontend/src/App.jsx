@@ -351,7 +351,7 @@ const LoadingOverlay = ({ summarizing }) => {
 };
 
 const SkeletonSummary = ({ status, onStop }) => (
-  <div className="glass-card animate-fade-in" style={{ marginBottom: '2rem', border: '1px dashed var(--border-color)', position: 'relative' }}>
+  <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem', border: '1px dashed var(--border-color)', position: 'relative' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <div className="spinner" style={{ width: '20px', height: '20px' }}></div>
@@ -1123,6 +1123,13 @@ function App() {
 
           <div style={{ position: 'absolute', left: 0, top: 0, display: 'flex', gap: '1rem' }}>
             <button
+              onClick={handleReset}
+              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              title="Cari Buku Baru"
+            >
+              <RotateCcw size={24} />
+            </button>
+            <button
               onClick={() => setShowHistory(true)}
               style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
               title="Riwayat Pencarian"
@@ -1298,95 +1305,109 @@ function App() {
           </div>
         )}
 
-        {/* Input Form */}
-        <div className="glass-card" style={{ marginBottom: '2rem' }}>
-          <form onSubmit={handleVerify}>
-            <div style={{ display: 'grid', gridTemplateColumns: showIsbn ? '1fr 1fr' : '1fr', gap: '1rem', marginBottom: '1rem' }}>
-              {showIsbn && (
+        {/* Phase A: Input Form - Only show if no verification result and no current book loaded */}
+        {!verificationResult && !currentBook && (
+          <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem' }}>
+            <form onSubmit={handleVerify}>
+              <div style={{ display: 'grid', gridTemplateColumns: showIsbn ? '1fr 1fr' : '1fr', gap: '1rem', marginBottom: '1rem' }}>
+                {showIsbn && (
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>ISBN</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Contoh: 978-0132350884"
+                      value={isbn}
+                      onChange={(e) => setIsbn(e.target.value)}
+                    />
+                  </div>
+                )}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>ISBN</label>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Judul Buku</label>
                   <input
                     type="text"
                     className="input-field"
-                    placeholder="Contoh: 978-0132350884"
-                    value={isbn}
-                    onChange={(e) => setIsbn(e.target.value)}
+                    placeholder="Contoh: Clean Code"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
                   />
                 </div>
-              )}
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Judul Buku</label>
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Penulis</label>
                 <input
                   type="text"
                   className="input-field"
-                  placeholder="Contoh: Clean Code"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Contoh: Robert C. Martin"
+                  value={author}
+                  onChange={(e) => setAuthor(e.target.value)}
                 />
               </div>
-            </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Penulis</label>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="Contoh: Robert C. Martin"
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
-              />
-            </div>
-            <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={() => setShowIsbn(!showIsbn)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--accent-color)',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                  padding: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                {showIsbn ? "Sembunyikan ISBN" : "Tampilkan Opsi ISBN"}
-              </button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem' }}>
-              <button type="submit" className="btn-primary" disabled={loading} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                {loading ? <><span className="spinner"></span> Memverifikasi...</> : <><Search size={18} style={{ marginRight: '8px' }} /> Cari & Verifikasi</>}
-              </button>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="btn-secondary"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 1.5rem' }}
-                title="Reset Sesi"
-              >
-                <RotateCcw size={18} />
-                <span style={{ marginLeft: '8px' }}>Reset</span>
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Verification Result */}
-        {verificationResult && (
-          <div className="glass-card animate-fade-in" style={{ marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
-              {verificationResult.is_valid ? (
-                <CheckCircle size={32} color="var(--success)" style={{ marginRight: '1rem' }} />
-              ) : (
-                <AlertCircle size={32} color="var(--error)" style={{ marginRight: '1rem' }} />
-              )}
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.25rem' }}>
-                  {verificationResult.is_valid ? "Buku Terverifikasi" : "Verifikasi Gagal"}
-                </h3>
-                <p style={{ margin: 0, color: 'var(--text-secondary)' }}>{verificationResult.message}</p>
+              <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowIsbn(!showIsbn)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--accent-color)',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  {showIsbn ? "Sembunyikan ISBN" : "Tampilkan Opsi ISBN"}
+                </button>
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem' }}>
+                <button type="submit" className="btn-primary" disabled={loading} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                  {loading ? <><span className="spinner"></span> Memverifikasi...</> : <><Search size={18} style={{ marginRight: '8px' }} /> Cari & Verifikasi</>}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 1.5rem' }}
+                  title="Reset Sesi"
+                >
+                  <RotateCcw size={18} />
+                  <span style={{ marginLeft: '8px' }}>Reset</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Phase B: Verification Result - Only show if verification exists and not yet summarizing/summary shown */}
+        {verificationResult && !summarizing && !summary && (
+          <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                {verificationResult.status === 'success' ? (
+                  <CheckCircle size={32} color="var(--success)" style={{ marginRight: '1rem' }} />
+                ) : verificationResult.status === 'warning' ? (
+                  <AlertCircle size={32} color="var(--warning)" style={{ marginRight: '1rem' }} />
+                ) : (
+                  <AlertCircle size={32} color="var(--error)" style={{ marginRight: '1rem' }} />
+                )}
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.25rem' }}>
+                    {verificationResult.status === 'success' ? "Buku Terverifikasi" :
+                      verificationResult.status === 'warning' ? "Verifikasi Parsial" : "Verifikasi Gagal"}
+                  </h3>
+                  <p style={{ margin: 0, color: 'var(--text-secondary)' }}>{verificationResult.message}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setVerificationResult(null)}
+                className="btn-secondary"
+                style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <RotateCcw size={14} /> Cari Ulang
+              </button>
             </div>
 
             {verificationResult.sources.length > 0 && (
@@ -1429,7 +1450,7 @@ function App() {
                     />
                   </div>
                 )}
-                <div style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ flex: 1, textAlign: 'center', alignSelf: 'center' }}>
                   {!summary && (
                     <button
                       onClick={handleSummarize}
@@ -1437,13 +1458,15 @@ function App() {
                       disabled={summarizing}
                       style={{
                         backgroundColor: existingSummary ? 'var(--success)' : '',
-                        borderColor: existingSummary ? 'var(--success)' : ''
+                        borderColor: existingSummary ? 'var(--success)' : '',
+                        padding: '1rem 2rem',
+                        fontSize: '1.1rem'
                       }}
                     >
                       {existingSummary ? (
-                        <><BookOpen size={18} style={{ marginRight: '8px' }} /> Buka Rangkuman Tersimpan</>
+                        <><BookOpen size={20} style={{ marginRight: '10px' }} /> Buka Rangkuman Tersimpan</>
                       ) : (
-                        summarizing ? <><span className="spinner"></span> Sedang Merangkum...</> : <><Sparkles size={18} style={{ marginRight: '8px' }} /> Generate Rangkuman AI</>
+                        summarizing ? <><span className="spinner"></span> Sedang Merangkum...</> : <><Sparkles size={20} style={{ marginRight: '10px' }} /> Generate Rangkuman AI</>
                       )}
                     </button>
                   )}
@@ -1465,7 +1488,7 @@ function App() {
 
         {/* Summary Result */}
         {summary && (
-          <div className="glass-card animate-fade-in summary-card">
+          <div className="glass-card animate-slide-up summary-card">
             {/* Version Switcher if multiple versions available */}
             {currentBook && currentBook.summaries && currentBook.summaries.length > 1 && (
               <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
