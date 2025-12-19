@@ -1,5 +1,5 @@
 # 📚 Pustaka+
-Aplikasi yang berfungsi untuk merangkum sebuah buku menggunakan bantuan AI melalui OpenRouter atau Ollama. Untuk mencegah halusinasi AI, aplikasi akan memastikan bahwa buku yang akan dirangkum benar-benar ada (melalui Google Books & OpenLibrary) sebelum menggunakan AI untuk merangkum isinya.
+Aplikasi yang berfungsi untuk merangkum sebuah buku menggunakan bantuan AI melalui OpenRouter atau Ollama. Untuk mencegah halusinasi AI, aplikasi akan memastikan bahwa buku yang akan dirangkum benar-benar ada (melalui Google Books & OpenLibrary).
 
 ## ✨ Fitur Utama
 - **Verifikasi Ganda**: Mengecek metadata buku ke sumber tepercaya (Google Books & OpenLibrary).
@@ -7,7 +7,7 @@ Aplikasi yang berfungsi untuk merangkum sebuah buku menggunakan bantuan AI melal
 - **Provider**: **OpenRouter** (Cloud) & **Ollama** (Lokal)
 
 ## 🛠️ Prasyarat
-Pastikan Anda sudah menginstal:
+Pastikan kamu sudah menginstal:
 - **Python 3.9+**
 - **Node.js**
 - **Ollama** (Hanya jika ingin menjalankan model AI secara lokal/offline)
@@ -56,14 +56,14 @@ Aplikasi ini mendukung dua metode penggunaan AI:
 
 1. **Cloud (OpenRouter)**:
    - Klik status AI di pojok kanan atas.
-   - Pilih tab **OpenRouter** dan masukkan API Key Anda.
+   - Pilih tab **OpenRouter** dan masukkan API Key kamu.
    - Pilih model yang tersedia (Flash, Pro, dll).
 
 2. **Lokal (Ollama)**:
    - Pastikan **Ollama** sudah terinstal dan sedang berjalan (`ollama serve`).
    - Klik status AI, pilih tab **Ollama**.
    - Masukkan Base URL Ollama (default: `http://localhost:11434`).
-   - Pilih model lokal yang sudah Anda unduh (misal: `llama3`, `mistral`, `phi3`).
+   - Pilih model lokal yang sudah kamu unduh (misal: `llama3`, `mistral`, `phi3`).
 
 Konfigurasi disimpan secara otomatis di file `backend/config.json`.
 
