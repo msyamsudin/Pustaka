@@ -3,8 +3,8 @@ Aplikasi yang berfungsi untuk merangkum sebuah buku menggunakan bantuan AI melal
 
 ## ✨ Fitur Utama
 - **Verifikasi Ganda**: Mengecek metadata buku ke sumber tepercaya (Google Books & OpenLibrary).
-- **Rangkuman AI**: Menggunakan LLM (OpenRouter atau Ollama) untuk merangkum buku yang terverifikasi.
-- **Provider**: **OpenRouter** (Cloud) & **Ollama** (Lokal)
+- **Rangkuman AI**: Menggunakan LLM (OpenRouter, Groq, atau Ollama) untuk merangkum buku yang terverifikasi.
+- **Provider**: **OpenRouter** (Cloud), **Groq** (Cloud), & **Ollama** (Lokal)
 
 ## 🛠️ Prasyarat
 Pastikan kamu sudah menginstal:
@@ -54,10 +54,10 @@ Buka browser di: **http://localhost:5173**
 ## 🔑 Konfigurasi AI
 Aplikasi ini mendukung dua metode penggunaan AI:
 
-1. **Cloud (OpenRouter)**:
+1. **Cloud (OpenRouter & Groq)**:
    - Klik status AI di pojok kanan atas.
-   - Pilih tab **OpenRouter** dan masukkan API Key kamu.
-   - Pilih model yang tersedia (Flash, Pro, dll).
+   - Pilih tab **OpenRouter** atau **Groq** dan masukkan API Key kamu.
+   - Pilih model yang tersedia (misal: `llama-3.3-70b-versatile` untuk Groq).
 
 2. **Lokal (Ollama)**:
    - Pastikan **Ollama** sudah terinstal dan sedang berjalan (`ollama serve`).
@@ -65,7 +65,7 @@ Aplikasi ini mendukung dua metode penggunaan AI:
    - Masukkan Base URL Ollama (default: `http://localhost:11434`).
    - Pilih model lokal yang sudah kamu unduh (misal: `llama3`, `mistral`, `phi3`).
 
-Konfigurasi disimpan secara otomatis di file `backend/config.json`.
+Konfigurasi disimpan secara otomatis di file `user_config.json`.
 
 ## 📁 Struktur Proyek
 - `/backend`: Logika server Python (FastAPI), Verifikasi, dan Summarizer.
