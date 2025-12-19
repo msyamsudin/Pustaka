@@ -281,74 +281,7 @@ const Toast = ({ message, type = 'success', onClose }) => {
   );
 };
 
-const LoadingOverlay = ({ summarizing }) => {
-  const [statusIndex, setStatusIndex] = useState(0);
-  const [displayedText, setDisplayedText] = useState("");
-  const [isTyping, setIsTyping] = useState(true);
 
-  const statuses = [
-    "Membaca bab demi bab...",
-    "Menganalisis konteks...",
-    "Menyusun poin-poin penting...",
-    "Memoles kalimat...",
-    "Finishing touch..."
-  ];
-
-  useEffect(() => {
-    if (!summarizing) return;
-    const statusInterval = setInterval(() => {
-      setStatusIndex((prev) => (prev + 1) % statuses.length);
-      setIsTyping(true);
-      setDisplayedText("");
-    }, 3500);
-
-    return () => clearInterval(statusInterval);
-  }, [summarizing, statuses.length]);
-
-  useEffect(() => {
-    if (!summarizing || !isTyping) return;
-
-    const targetText = statuses[statusIndex];
-    if (displayedText.length < targetText.length) {
-      const timeout = setTimeout(() => {
-        setDisplayedText(targetText.slice(0, displayedText.length + 1));
-      }, 50);
-      return () => clearTimeout(timeout);
-    } else {
-      setIsTyping(false);
-    }
-  }, [displayedText, statusIndex, isTyping, summarizing, statuses]);
-
-  if (!summarizing) return null;
-
-  return (
-    <div className="modal-overlay animate-fade-in" style={{ zIndex: 2000, background: 'rgba(9, 9, 11, 0.85)' }}>
-      <div style={{ textAlign: 'center', color: 'white', width: '100%', maxWidth: '450px', padding: '0 1.5rem' }}>
-        <div className="semantic-wave-container">
-          {[...Array(5)].map((_, i) => (
-            <div
-              key={i}
-              className="wave-line"
-              style={{ animationDelay: `${i * 0.15}s` }}
-            />
-          ))}
-        </div>
-        <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', fontWeight: 500, letterSpacing: '0.5px', color: 'rgba(255,255,255,0.9)' }}>
-          SEDANG MERANGKUM
-        </h3>
-        <div style={{
-          color: 'var(--accent-color)',
-          marginBottom: '0',
-          height: '24px',
-          fontSize: '1.1rem',
-          fontWeight: 500
-        }}>
-          {displayedText}<span className="typing-cursor" />
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const SkeletonSummary = ({ status, onStop }) => (
   <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem', border: '1px dashed var(--border-color)', position: 'relative' }}>
@@ -1110,6 +1043,29 @@ function App() {
       setIsSavingMetadata(false);
     }
   };
+
+  // Status Cycling Effect (Chain of Density)
+  useEffect(() => {
+    if (!summarizing || summary || (tokensReceived > 0)) return;
+
+    const messages = [
+      "Menghubungkan ke Neural Network...",
+      "Mengekstrak Entitas & Istilah Kunci...",
+      "Menyusun Kerangka Logika...",
+      "Memadatkan Informasi (Chain of Density)...",
+      "Finalisasi Format Output..."
+    ];
+
+    let index = 0;
+
+    // Timer to cycle messages
+    const intervalId = setInterval(() => {
+      index = (index + 1) % messages.length;
+      setStreamingStatus(messages[index]);
+    }, 3500);
+
+    return () => clearInterval(intervalId);
+  }, [summarizing, summary, tokensReceived]);
 
   return (
     <>
@@ -2124,7 +2080,7 @@ function App() {
         onClose={() => setIsMetadataModalOpen(false)}
         isSaving={isSavingMetadata}
       />
-      <LoadingOverlay summarizing={summarizing && !summary} />
+
 
       {
         toast && (
