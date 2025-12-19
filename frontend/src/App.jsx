@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, PenTool, Eye, EyeOff, Copy, Check } from 'lucide-react';
+import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check } from 'lucide-react';
 
 const API_BASE_URL = "http://127.0.0.1:8000/api";
 
@@ -70,7 +70,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Select..." 
         style={{ marginBottom: 0 }}
       />
       {isOpen && (
-        <div className="searchable-select-menu animate-fade-in">
+        <div className="searchable-select-menu custom-scrollbar animate-fade-in">
           {filteredOptions.length > 0 ? (
             filteredOptions.map((opt) => (
               <div
@@ -1037,6 +1037,9 @@ function App() {
     setCurrentBook(null);
     setCurrentVariant(null);
     setCopied(false);
+    setShowSettings(false);
+    setShowLibrary(false);
+    setShowHistory(false);
   };
 
   const handleCopy = () => {
@@ -1140,22 +1143,30 @@ function App() {
 
           <div style={{ position: 'absolute', left: 0, top: 0, display: 'flex', gap: '1rem' }}>
             <button
-              onClick={handleReset}
+              onClick={() => { handleReset(); setShowSettings(false); }}
               style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
               title="Cari Buku Baru"
             >
-              <RotateCcw size={24} />
+              <Home size={24} />
             </button>
             <button
-              onClick={() => setShowHistory(true)}
-              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              onClick={() => {
+                setShowHistory(!showHistory);
+                setShowSettings(false);
+                setShowLibrary(false);
+              }}
+              style={{ background: 'none', border: 'none', color: showHistory ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer' }}
               title="Riwayat Pencarian"
             >
               <History size={24} />
             </button>
             <button
-              onClick={() => setShowLibrary(true)}
-              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              onClick={() => {
+                setShowLibrary(!showLibrary);
+                setShowSettings(false);
+                setShowHistory(false);
+              }}
+              style={{ background: 'none', border: 'none', color: showLibrary ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer' }}
               title="Perpustakaan (Tersimpan)"
             >
               <BookOpen size={24} />
@@ -1322,8 +1333,223 @@ function App() {
           </div>
         )}
 
-        {/* Phase A: Input Form - Only show if no verification result, no current book, and settings hidden */}
-        {!verificationResult && !currentBook && !showSettings && (
+        {/* Library Card */}
+        {showLibrary && (
+          <div className="glass-card animate-fade-in" style={{
+            marginBottom: '2rem',
+            border: '1px solid var(--border-color)',
+            padding: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', fontSize: '1.25rem' }}>
+                <BookOpen size={20} style={{ marginRight: '10px', color: 'var(--accent-color)' }} />
+                Perpustakaan Tersimpan
+              </h3>
+              <button
+                onClick={() => setShowLibrary(false)}
+                className="btn-secondary"
+                style={{ padding: '0.25rem', minWidth: 'auto', border: 'none', background: 'none' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div
+              id="library-content"
+              ref={libraryContentRef}
+              className="custom-scrollbar"
+              style={{ maxHeight: 'none', padding: '1.5rem' }}
+            >
+              {savedSummaries.length === 0 ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
+                  Belum ada rangkuman tersimpan.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1.5rem' }}>
+                  {savedSummaries.map((book) => (
+                    <div key={book.id} className="glass-card" style={{ padding: '0', cursor: 'pointer', transition: 'all 0.2s', border: '1px solid var(--border-color)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={() => loadFromLibrary(book)}>
+                      <div style={{
+                        width: '100%', height: '260px', backgroundColor: 'var(--bg-secondary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        overflow: 'hidden', flexShrink: 0, position: 'relative'
+                      }}>
+                        {book.image_url ? (
+                          <img
+                            src={getImageUrl(book.image_url, book.last_updated)}
+                            alt={book.title}
+                            className="sharp-image"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={(e) => e.target.style.display = 'none'}
+                          />
+                        ) : (
+                          <Book size={48} color="var(--text-secondary)" opacity={0.3} />
+                        )}
+
+                        <div className="card-overlay" style={{
+                          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                          background: 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 40%, rgba(0,0,0,0.6) 100%)',
+                          opacity: 1, transition: 'opacity 0.2s',
+                        }}>
+                          <div
+                            className="cover-edit-btn"
+                            title="Ganti Cover"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCoverEditBook(book);
+                              setIsCoverModalOpen(true);
+                            }}
+                            style={{
+                              position: 'absolute', top: '8px', right: '8px',
+                              background: 'rgba(0,0,0,0.6)', borderRadius: '50%',
+                              width: '32px', height: '32px', display: 'flex',
+                              alignItems: 'center', justifyContent: 'center', color: 'white',
+                              zIndex: 10, backdropFilter: 'blur(4px)'
+                            }}
+                          >
+                            <Settings size={16} />
+                          </div>
+
+                          <div
+                            className="metadata-edit-btn"
+                            title="Edit Info Buku"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMetadataEditBook(book);
+                              setMetadataTitle(book.title);
+                              setMetadataAuthor(book.author);
+                              setMetadataIsbn(book.isbn || "");
+                              setIsMetadataModalOpen(true);
+                            }}
+                            style={{
+                              position: 'absolute', top: '8px', left: '8px',
+                              background: 'rgba(0,0,0,0.6)', borderRadius: '50%',
+                              width: '32px', height: '32px', display: 'flex',
+                              alignItems: 'center', justifyContent: 'center', color: 'white',
+                              zIndex: 10, backdropFilter: 'blur(4px)'
+                            }}
+                          >
+                            <PenTool size={16} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ padding: '0.85rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        <h4 style={{
+                          margin: '0 0 0.35rem 0', color: 'var(--text-primary)',
+                          fontSize: '0.95rem', fontWeight: '600',
+                          overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box',
+                          WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5rem'
+                        }} title={book.title}>
+                          {book.title}
+                        </h4>
+                        <p style={{ margin: '0 0 0.75rem 0', color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{book.author}</p>
+
+                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '0.7rem' }}>
+                            {book.summaries.length} Versi
+                          </span>
+                          <button
+                            onClick={(e) => handleDeleteBook(book.id, e)}
+                            style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '0.75rem', opacity: 0.7 }}
+                          >
+                            <Trash2 size={12} style={{ marginRight: '4px' }} /> Hapus
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+
+        {/* History Card */}
+        {showHistory && (
+          <div className="glass-card animate-fade-in" style={{
+            marginBottom: '2rem',
+            border: '1px solid var(--border-color)',
+            padding: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', fontSize: '1.25rem' }}>
+                <History size={20} style={{ marginRight: '10px', color: 'var(--accent-color)' }} />
+                Riwayat Pencarian
+              </h3>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="btn-secondary"
+                style={{ padding: '0.25rem', minWidth: 'auto', border: 'none', background: 'none' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="custom-scrollbar" style={{ maxHeight: 'none', padding: '1.5rem' }}>
+              {history.length === 0 ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
+                  Belum ada riwayat pencarian.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {history.map((item, idx) => (
+                    <div key={idx} style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'start'
+                    }}>
+                      <div onClick={() => loadFromHistory(item)} style={{ cursor: 'pointer', flex: 1 }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                          {item.title || item.isbn}
+                        </div>
+                        {item.author && <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{item.author}</div>}
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
+                          {new Date(item.timestamp).toLocaleString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => deleteHistoryItem(idx)}
+                        style={{ background: 'none', border: 'none', color: 'var(--error)', opacity: 0.6, cursor: 'pointer', padding: '0.25rem' }}
+                        title="Hapus item"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {history.length > 0 && (
+              <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)', textAlign: 'right' }}>
+                <button
+                  onClick={clearHistory}
+                  className="btn-danger"
+                  style={{
+                    padding: '0.5rem 1rem',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  Bersihkan Semua Riwayat
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Phase A: Input Form - Only show if no verification result, no current book, settings hidden, library hidden, and history hidden */}
+        {!verificationResult && !currentBook && !showSettings && !showLibrary && !showHistory && (
           <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem' }}>
             <form onSubmit={handleVerify}>
               <div style={{ display: 'grid', gridTemplateColumns: showIsbn ? '1fr 1fr' : '1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -1444,12 +1670,15 @@ function App() {
             {verificationResult.sources.length > 0 && (
               <div style={{ marginTop: '1rem' }}>
                 <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)' }}>Sinopsis (Dari Sumber)</h4>
-                <p style={{
-                  fontSize: '0.9rem', lineHeight: '1.5', color: '#e2e8f0',
-                  background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '6px',
-                  maxHeight: '150px', overflowY: 'auto', fontStyle: verificationResult.sources.some(s => s.description) ? 'normal' : 'italic',
-                  opacity: verificationResult.sources.some(s => s.description) ? 1 : 0.7
-                }}>
+                <p
+                  className="custom-scrollbar"
+                  style={{
+                    fontSize: '0.9rem', lineHeight: '1.5', color: '#e2e8f0',
+                    background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '6px',
+                    maxHeight: '150px', overflowY: 'auto', fontStyle: verificationResult.sources.some(s => s.description) ? 'normal' : 'italic',
+                    opacity: verificationResult.sources.some(s => s.description) ? 1 : 0.7
+                  }}
+                >
                   {verificationResult.sources.find(s => s.description)?.description || "Tidak ada deskripsi tersedia dari sumber data."}
                 </p>
               </div>
@@ -1749,210 +1978,6 @@ function App() {
           </div>
         )}
       </div>
-
-      {/* History Modal */}
-      {
-        showHistory && (
-          <div className="modal-overlay animate-fade-in">
-            <div className="glass-card" style={{ width: '100%', maxWidth: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
-                  <History size={20} style={{ marginRight: '10px', color: 'var(--accent-color)' }} />
-                  Riwayat Pencarian
-                </h3>
-                <button onClick={() => setShowHistory(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                  <X size={24} />
-                </button>
-              </div>
-
-              <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
-                {history.length === 0 ? (
-                  <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
-                    Belum ada riwayat pencarian.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {history.map((item, idx) => (
-                      <div key={idx} style={{
-                        background: 'rgba(255,255,255,0.03)',
-                        borderRadius: '8px',
-                        padding: '1rem',
-                        border: '1px solid var(--border-color)',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'start'
-                      }}>
-                        <div onClick={() => loadFromHistory(item)} style={{ cursor: 'pointer', flex: 1 }}>
-                          <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                            {item.title || item.isbn}
-                          </div>
-                          {item.author && <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{item.author}</div>}
-                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
-                            {new Date(item.timestamp).toLocaleString()}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => deleteHistoryItem(idx)}
-                          style={{ background: 'none', border: 'none', color: 'var(--error)', opacity: 0.6, cursor: 'pointer', padding: '0.25rem' }}
-                          title="Hapus item"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {history.length > 0 && (
-                <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)', textAlign: 'right' }}>
-                  <button
-                    onClick={clearHistory}
-                    style={{
-                      background: 'rgba(239, 68, 68, 0.1)',
-                      color: 'var(--error)',
-                      border: '1px solid rgba(239, 68, 68, 0.2)',
-                      padding: '0.5rem 1rem',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '0.9rem'
-                    }}
-                  >
-                    Bersihkan Semua Riwayat
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )
-      }
-
-      {/* Library Modal */}
-      {
-        showLibrary && (
-          <div className="modal-overlay animate-fade-in">
-            <div className="glass-card" style={{ width: '100%', maxWidth: '800px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
-                  <BookOpen size={20} style={{ marginRight: '10px', color: 'var(--accent-color)' }} />
-                  Perpustakaan Tersimpan
-                </h3>
-                <button onClick={() => setShowLibrary(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                  <X size={24} />
-                </button>
-              </div>
-
-              <div
-                id="library-content"
-                ref={libraryContentRef}
-                style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}
-              >
-                {savedSummaries.length === 0 ? (
-                  <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
-                    Belum ada rangkuman tersimpan.
-                  </div>
-                ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1.5rem' }}>
-                    {savedSummaries.map((book) => (
-                      <div key={book.id} className="glass-card" style={{ padding: '0', cursor: 'pointer', transition: 'all 0.2s', border: '1px solid var(--border-color)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={() => loadFromLibrary(book)}>
-                        <div style={{
-                          width: '100%', height: '260px', backgroundColor: 'var(--bg-secondary)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          overflow: 'hidden', flexShrink: 0, position: 'relative'
-                        }}>
-                          {book.image_url ? (
-                            <img
-                              src={getImageUrl(book.image_url, book.last_updated)}
-                              alt={book.title}
-                              className="sharp-image"
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                              onError={(e) => e.target.style.display = 'none'}
-                            />
-                          ) : (
-                            <Book size={48} color="var(--text-secondary)" opacity={0.3} />
-                          )}
-
-                          {/* Quick Actions Overlay */}
-                          <div className="card-overlay" style={{
-                            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                            background: 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 40%, rgba(0,0,0,0.6) 100%)',
-                            opacity: 1, transition: 'opacity 0.2s',
-                          }}>
-                            <div
-                              className="cover-edit-btn"
-                              title="Ganti Cover"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCoverEditBook(book);
-                                setIsCoverModalOpen(true);
-                              }}
-                              style={{
-                                position: 'absolute', top: '8px', right: '8px',
-                                background: 'rgba(0,0,0,0.6)', borderRadius: '50%',
-                                width: '32px', height: '32px', display: 'flex',
-                                alignItems: 'center', justifyContent: 'center', color: 'white',
-                                zIndex: 10, backdropFilter: 'blur(4px)'
-                              }}
-                            >
-                              <Settings size={16} />
-                            </div>
-
-                            <div
-                              className="metadata-edit-btn"
-                              title="Edit Info Buku"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMetadataEditBook(book);
-                                setMetadataTitle(book.title);
-                                setMetadataAuthor(book.author);
-                                setMetadataIsbn(book.isbn || "");
-                                setIsMetadataModalOpen(true);
-                              }}
-                              style={{
-                                position: 'absolute', top: '8px', left: '8px',
-                                background: 'rgba(0,0,0,0.6)', borderRadius: '50%',
-                                width: '32px', height: '32px', display: 'flex',
-                                alignItems: 'center', justifyContent: 'center', color: 'white',
-                                zIndex: 10, backdropFilter: 'blur(4px)'
-                              }}
-                            >
-                              <PenTool size={16} />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ padding: '0.85rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                          <h4 style={{
-                            margin: '0 0 0.35rem 0', color: 'var(--text-primary)',
-                            fontSize: '0.95rem', fontWeight: '600',
-                            overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box',
-                            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5rem'
-                          }} title={book.title}>
-                            {book.title}
-                          </h4>
-                          <p style={{ margin: '0 0 0.75rem 0', color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{book.author}</p>
-
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '0.7rem' }}>
-                              {book.summaries.length} Versi
-                            </span>
-                            <button
-                              onClick={(e) => handleDeleteBook(book.id, e)}
-                              style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '0.75rem', opacity: 0.7 }}
-                            >
-                              <Trash2 size={12} style={{ marginRight: '4px' }} /> Hapus
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div >
-        )
-      }
 
       {/* Custom Modals */}
       <SimpleModal

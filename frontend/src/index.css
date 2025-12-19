@@ -387,22 +387,29 @@ option {
   color: var(--text-primary);
 }
 
-/* Scrollbar styling for the list */
-.searchable-select-menu::-webkit-scrollbar {
+/* Custom Scrollbar Utility */
+.custom-scrollbar::-webkit-scrollbar {
   width: 8px;
 }
 
-.searchable-select-menu::-webkit-scrollbar-track {
+.custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.searchable-select-menu::-webkit-scrollbar-thumb {
+.custom-scrollbar::-webkit-scrollbar-thumb {
   background: var(--border-color);
   border-radius: 4px;
 }
 
-.searchable-select-menu::-webkit-scrollbar-thumb:hover {
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
+
+/* Scrollbar styling for the list */
+.searchable-select-menu {
+  /* ... existing styles ... */
+  max-height: 250px;
+  overflow-y: auto;
 }
 
 /* Sticky Summary Header */
