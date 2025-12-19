@@ -103,6 +103,7 @@ class SummarizationRequest(BaseModel):
     model: Optional[str] = None
     provider: Optional[str] = "OpenRouter"
     base_url: Optional[str] = None
+    partial_content: Optional[str] = None
 
 
 @app.post("/api/summarize")
@@ -127,7 +128,7 @@ def summarize_book(req: SummarizationRequest):
     )
     
     return StreamingResponse(
-        summarizer.summarize_stream(req.metadata),
+        summarizer.summarize_stream(req.metadata, partial_content=req.partial_content),
         media_type="text/event-stream"
     )
 

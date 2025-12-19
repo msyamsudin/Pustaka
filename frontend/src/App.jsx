@@ -868,8 +868,8 @@ function App() {
     setExistingSummary(null);
   }, [verificationResult, openRouterModel, isbn, title, author, savedSummaries]);
 
-  const handleSummarize = async () => {
-    if (existingSummary) {
+  const handleSummarize = async (isResume = false) => {
+    if (existingSummary && !isResume) {
       setCurrentBook(existingSummary.book);
       loadVariant(existingSummary.variant);
       showToast("Memuat rangkuman tersimpan...", "success");
@@ -880,12 +880,14 @@ function App() {
 
     setSummarizing(true);
     setError(null);
-    setSummary(null);
-    setUsageStats(null);
-    setSavedId(null);
-    setCurrentVariant(null);
-    setTokensReceived(0);
-    setStreamingStatus(`Menghubungkan ke ${provider}...`);
+    if (!isResume) {
+      setSummary(null);
+      setUsageStats(null);
+      setSavedId(null);
+      setCurrentVariant(null);
+      setTokensReceived(0);
+    }
+    setStreamingStatus(isResume ? "Menghubungkan kembali..." : `Menghubungkan ke ${provider}...`);
 
     abortControllerRef.current = new AbortController();
 
@@ -901,7 +903,8 @@ function App() {
           provider: provider,
           api_key: provider === 'OpenRouter' ? openRouterKey : null,
           model: provider === 'OpenRouter' ? openRouterModel : ollamaModel,
-          base_url: provider === 'Ollama' ? ollamaBaseUrl : null
+          base_url: provider === 'Ollama' ? ollamaBaseUrl : null,
+          partial_content: isResume ? summary : null
         }),
       });
 
@@ -910,11 +913,12 @@ function App() {
         throw new Error(errorData.detail || "Gagal membuat rangkuman.");
       }
 
-      setStreamingStatus("AI sedang menganalisis struktur buku...");
+      setStreamingStatus(isResume ? "Melanjutkan penulisan..." : "AI sedang menganalisis struktur buku...");
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let accumulatedSummary = "";
-      let tokenCount = 0;
+      let accumulatedSummary = isResume ? summary : "";
+      let tokenCount = isResume ? tokensReceived : 0;
+      let firstChunk = true;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -935,7 +939,10 @@ function App() {
               }
 
               if (data.content) {
-                if (accumulatedSummary === "") setStreamingStatus("Menghasilkan rangkuman...");
+                if (firstChunk) {
+                  setStreamingStatus(isResume ? "Melanjutkan penulisan..." : "Menghasilkan rangkuman...");
+                  firstChunk = false;
+                }
                 accumulatedSummary += data.content;
                 setSummary(accumulatedSummary);
                 tokenCount += 1;
@@ -1305,8 +1312,8 @@ function App() {
           </div>
         )}
 
-        {/* Phase A: Input Form - Only show if no verification result and no current book loaded */}
-        {!verificationResult && !currentBook && (
+        {/* Phase A: Input Form - Only show if no verification result, no current book, and settings hidden */}
+        {!verificationResult && !currentBook && !showSettings && (
           <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem' }}>
             <form onSubmit={handleVerify}>
               <div style={{ display: 'grid', gridTemplateColumns: showIsbn ? '1fr 1fr' : '1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -1381,8 +1388,8 @@ function App() {
           </div>
         )}
 
-        {/* Phase B: Verification Result - Only show if verification exists and not yet summarizing/summary shown */}
-        {verificationResult && !summarizing && !summary && (
+        {/* Phase B: Verification Result - Only show if verification exists, not yet summarizing/summary, and settings hidden */}
+        {verificationResult && !summarizing && !summary && !showSettings && (
           <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -1478,16 +1485,37 @@ function App() {
 
         {/* Error Message */}
         {error && (
-          <div style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--error)', borderRadius: '8px', color: 'var(--error)', marginBottom: '2rem' }}>
-            {error}
+          <div className="glass-card animate-fade-in" style={{ padding: '1rem', border: '1px solid var(--error)', background: 'rgba(239, 68, 68, 0.05)', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', color: 'var(--error)' }}>
+              <AlertCircle size={20} style={{ marginRight: '0.75rem', flexShrink: 0 }} />
+              <span style={{ fontSize: '0.9rem' }}>{error}</span>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {summary && (
+                <button
+                  onClick={() => handleSummarize(true)}
+                  className="btn-primary"
+                  style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <RefreshCw size={14} /> Lanjutkan
+                </button>
+              )}
+              <button
+                onClick={() => handleSummarize(false)}
+                className="btn-secondary"
+                style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <RotateCcw size={14} /> {summary ? "Mulai Ulang" : "Coba Lagi"}
+              </button>
+            </div>
           </div>
         )}
 
         {/* Summary Result Area */}
-        {summarizing && !summary && <SkeletonSummary status={streamingStatus} onStop={() => abortControllerRef.current?.abort()} />}
+        {summarizing && !summary && !showSettings && <SkeletonSummary status={streamingStatus} onStop={() => abortControllerRef.current?.abort()} />}
 
         {/* Summary Result */}
-        {summary && (
+        {summary && !showSettings && (
           <div className="glass-card animate-slide-up summary-card">
             {/* Version Switcher if multiple versions available */}
             {currentBook && currentBook.summaries && currentBook.summaries.length > 1 && (
@@ -1553,7 +1581,7 @@ function App() {
                           src={getImageUrl(verificationResult.sources.find(s => s.image_url).image_url, verificationResult.timestamp)}
                           alt="Cover"
                           className="sharp-image"
-                          style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
+                          style={{ width: '100%', height: '120px', marginLeft: '20px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
                           onError={(e) => e.target.style.display = 'none'}
                         />
                       )
@@ -1584,9 +1612,16 @@ function App() {
                     <button
                       onClick={() => abortControllerRef.current?.abort()}
                       className="btn-danger"
-                      style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
+                      style={{
+                        fontSize: '0.8rem',
+                        padding: '0.35rem 1rem',
+                        marginLeft: '5px',
+                        marginTop: '2px',
+                        marginBottom: '2px',
+                        marginRight: '20px'
+                      }}
                     >
-                      <X size={14} style={{ marginRight: '4px' }} /> Stop
+                      <X size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '6px' }} /> {!isStuck && "Stop"}
                     </button>
                   )}
                   {!summarizing && summary && (
@@ -1620,7 +1655,13 @@ function App() {
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {summary}
               </ReactMarkdown>
-              {summarizing && summary && <span className="typing-cursor"></span>}
+              {summarizing && summary && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>
+                  <div className="spinner" style={{ width: '16px', height: '16px' }}></div>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{streamingStatus}</span>
+                  <span className="typing-cursor"></span>
+                </div>
+              )}
             </div>
 
             {(usageStats || summarizing) && (

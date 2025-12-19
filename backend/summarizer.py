@@ -95,7 +95,7 @@ class BookSummarizer:
         except Exception as e:
             return {"error": f"Error generating summary: {str(e)}"}
 
-    def summarize_stream(self, book_metadata: List[Dict]):
+    def summarize_stream(self, book_metadata: List[Dict], partial_content: str = None):
         """Generator that yields chunks of the summary."""
         if self.provider == "OpenRouter" and not self.api_key:
             yield f"data: {json.dumps({'error': 'Error: API Key tidak ditemukan.'})}\n\n"
@@ -112,7 +112,7 @@ class BookSummarizer:
         title = primary_info.get("title", "Unknown Title")
         author = ", ".join(primary_info.get("authors", [])) if isinstance(primary_info.get("authors"), list) else primary_info.get("authors", "")
         source_note = "pengetahuan tentang buku ini dan deskripsi penerbit"
-        prompt = self._get_full_prompt(title, author, context_description, source_note)
+        prompt = self._get_full_prompt(title, author, context_description, source_note, partial_content=partial_content)
 
         try:
             start_time = time.time()
@@ -206,8 +206,8 @@ class BookSummarizer:
         except Exception as e:
             yield f"data: {json.dumps({'error': f'Failed to connect to Ollama: {str(e)}'})}\n\n"
 
-    def _get_full_prompt(self, title, author, context_description, source_note):
-        return f"""
+    def _get_full_prompt(self, title, author, context_description, source_note, partial_content: str = None):
+        base_prompt = f"""
         Anda adalah asisten AI spesialis analisis literatur kelas dunia yang mahir dalam mengekstrak informasi padat (dense information).
         
         Tugas Anda adalah membuat rangkuman buku yang sangat informatif menggunakan teknik **Chain of Density**.
@@ -284,6 +284,29 @@ class BookSummarizer:
         - SPESIFIK: Jangan bilang "Habit sangat penting", katakan "Atomic habits bekerja melalui mekanisme 'Environment Design' dan 'Identity-based change'".
         - JANGAN mengulang instruksi ini dalam jawaban.
         """
+        
+        if partial_content:
+            # Inject Continuation Logic
+            base_prompt += f"""
+            
+            ═══════════════════════════════════════════════════════════════
+            LANJUTKAN RANGKUMAN (RECOVERY MODE)
+            ═══════════════════════════════════════════════════════════════
+            PENTING: Anda sebelumnya sedang menulis rangkuman ini namun koneksi terputus tiba-tiba. 
+            Berikut adalah bagian terakhir dari teks yang berhasil diterima oleh sistem:
+            
+            \"\"\"
+            ...{partial_content[-500:]}
+            \"\"\"
+            
+            Tugas Anda:
+            1. LANJUTKAN tulisan tersebut tepat setelah titik terakhir teks di atas berhenti.
+            2. JANGAN menulis ulang metadata (Bagian 1) atau bagian apapun yang sudah tercantum dalam kutipan di atas.
+            3. Fokuslah untuk menyelesaikan bagian yang tersisa (misal: jika sudah sampai Bagian 4, lanjutkan ke Bagian 5 dan seterusnya).
+            4. Gunakan gaya bahasa dan format yang sama persis.
+            """
+            
+        return base_prompt
 
     def _calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> dict:
         # 1. Check for Free Models (Generic)
