@@ -501,20 +501,36 @@ class BookSummarizer:
         try:
             start_judge = time.time()
             
-            with self._client_lock:
-                completion = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[{"role": "user", "content": judge_prompt}]
-                )
+            if self.provider == "Ollama":
+                judge_res = self._summarize_ollama(judge_prompt, start_judge)
+                if "error" in judge_res:
+                    raise BookSummarizerError(judge_res["error"])
+                
+                final_content = judge_res["content"]
+                j_usage = judge_res["usage"]
+                end_judge = time.time() # Already calculated in _summarize_ollama but we need it here for duration logic
+            else:
+                if not self.client:
+                    raise BookSummarizerError("AI client not initialized")
+                    
+                with self._client_lock:
+                    completion = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=[{"role": "user", "content": judge_prompt}]
+                    )
+                
+                end_judge = time.time()
+                j_usage_obj = completion.usage
+                j_usage = {
+                    "prompt_tokens": j_usage_obj.prompt_tokens,
+                    "completion_tokens": j_usage_obj.completion_tokens,
+                    "total_tokens": j_usage_obj.total_tokens
+                }
+                final_content = self._clean_output(completion.choices[0].message.content)
             
-            end_judge = time.time()
-            
-            j_usage = completion.usage
-            usage_total["prompt_tokens"] += j_usage.prompt_tokens
-            usage_total["completion_tokens"] += j_usage.completion_tokens
-            usage_total["total_tokens"] += j_usage.total_tokens
-            
-            final_content = self._clean_output(completion.choices[0].message.content)
+            usage_total["prompt_tokens"] += j_usage["prompt_tokens"]
+            usage_total["completion_tokens"] += j_usage["completion_tokens"]
+            usage_total["total_tokens"] += j_usage["total_tokens"]
             
             avg_duration = sum(durations) / len(durations) if durations else 0
             
@@ -620,6 +636,7 @@ PROSES:
    - Eliminasi redundansi
    - Perbaiki gap informasi
    - Optimalkan untuk readability
+   - **PENTING**: Gunakan sintaks `[[angka]]` untuk setiap data kuantitatif hasil sintesis/derivasi analitis Anda.
 
 OUTPUT:
 Hasilkan HANYA brief final dalam format standar (9 bagian).
@@ -664,6 +681,16 @@ Transformasikan isi buku menjadi STRUCTURED KNOWLEDGE ARTIFACT (Analytical Brief
 ✓ Logical architecture (bukan narasi linear)
 ✓ Actionable intelligence (bukan trivia)
 </task_objective>
+
+<data_precision_policy>
+Dalam menyusun brief, Anda sering kali perlu melakukan derivasi atau sintesis angka (persentase, durasi, perbandingan) untuk mengilustrasikan dampak sebuah konsep.
+ATURAN KHUSUS & NUANSA ANALITIS:
+1. **Bungkus semua koefisien statistik non-literal dengan `[[ ]]`**. Gunakan bracket ini untuk angka, r-value, atau data kuantitatif yang merupakan hasil sintesis, estimasi, atau derivasi analitis Anda (bukan kutipan literal dari teks).
+   - Contoh: "Menurunkan kognitif load hingga [[43%]]..." atau "Korelasi kuat [[r=0.73]]..."
+2. **Lunakkan klaim kausal menjadi korelasional** pada 2-3 bagian dalam isi brief. Gunakan frasa seperti "berkorelasi dengan", "terkait erat dengan", atau "menunjukkan asosiasi", daripada klaim kausalitas langsung yang kaku. Cukup satu frasa per bagian.
+3. **Gunakan ILLUSTRATIVE RANGES untuk angka ekstrem**. Jika Anda menyebutkan angka yang sangat besar atau kecil (misal: "ribuan jam" atau "jutaan data"), sajikan sebagai range (misal: "[[10.000-15.000]] jam") agar terasa sebagai *order-of-magnitude*, bukan *point estimate* yang absolut.
+4. JANGAN gunakan double brackets untuk fakta statis seperti tahun terbit, nama tokoh, atau angka yang tertulis eksplisit di metadata buku.
+</data_precision_policy>
 
 <critical_prohibitions>
 🚫 DILARANG KERAS:
@@ -871,6 +898,7 @@ Sebelum mengirimkan output, pastikan:
 ☑ Setiap istilah teknis digunakan dengan presisi
 ☑ Tidak ada redundansi antar bagian
 ☑ Semua 9 bagian lengkap (tidak ada yang skip)
+☑ Menggunakan sintaks `[[...]]` untuk angka hasil sintesis (minimal 3 poin)
 ☑ Format markdown konsisten
 ☑ Panjang total 900-1300 kata
 ☑ Tidak ada meta-commentary ("Berikut adalah ringkasan...")

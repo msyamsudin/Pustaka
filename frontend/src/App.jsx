@@ -2283,8 +2283,24 @@ function App() {
             </div>
 
             <div className="markdown-content">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {summary}
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  code({ node, className, children, ...props }) {
+                    const content = String(children);
+                    if (content.startsWith('intel-synth:')) {
+                      return (
+                        <span className="synthesis-mark">
+                          <Sparkles size={10} style={{ color: 'var(--accent-color)' }} />
+                          {content.replace('intel-synth:', '')}
+                        </span>
+                      );
+                    }
+                    return <code className={className} {...props}>{children}</code>;
+                  }
+                }}
+              >
+                {summary ? summary.replace(/\[\[(.*?)\]\]/g, '`intel-synth:$1`') : ""}
               </ReactMarkdown>
               {summarizing && summary && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>
