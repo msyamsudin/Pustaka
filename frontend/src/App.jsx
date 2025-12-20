@@ -310,7 +310,7 @@ const SkeletonSummary = ({ status, onStop }) => (
   </div>
 );
 
-const MetadataEditModal = ({ isOpen, book, title, author, isbn, setTitle, setAuthor, setIsbn, onSave, onClose, isSaving }) => {
+const MetadataEditModal = ({ isOpen, book, title, author, isbn, genre, setTitle, setAuthor, setIsbn, setGenre, onSave, onClose, isSaving }) => {
   if (!isOpen || !book) return null;
 
   return (
