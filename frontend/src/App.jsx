@@ -593,8 +593,8 @@ function App() {
 
     try {
       const response = await axios.post(`${API_BASE_URL}/save`, {
-        title: title || verificationResult.sources[0]?.title || "Unknown Title",
-        author: author || "Unknown Author",
+        title: title || currentBook?.title || verificationResult.sources[0]?.title || "Unknown Title",
+        author: author || currentBook?.author || verificationResult.sources[0]?.author || "Unknown Author",
         summary_content: summary,
         usage_stats: usageStats || {},
         metadata: {
