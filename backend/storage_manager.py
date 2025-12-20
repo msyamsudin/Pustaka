@@ -128,6 +128,8 @@ class StorageManager:
         isbn = summary_data.get('metadata', {}).get('isbn', '')
         title = summary_data['title'].strip()
         author = summary_data['author'].strip()
+        genre = summary_data.get('metadata', {}).get('genre', '')
+        published_date = summary_data.get('metadata', {}).get('publishedDate', '')
         
         target_book = None
         
@@ -164,6 +166,10 @@ class StorageManager:
             # Update metadata if missing
             if not target_book.get('isbn') and isbn:
                 target_book['isbn'] = isbn
+            if not target_book.get('genre') and genre:
+                target_book['genre'] = genre
+            if not target_book.get('publishedDate') and published_date:
+                target_book['publishedDate'] = published_date
             # Update cover if missing
             if not target_book.get('image_url'):
                  raw_url = summary_data.get('metadata', {}).get('image_url', '')
@@ -178,6 +184,8 @@ class StorageManager:
                 "id": book_id,
                 "title": title,
                 "author": author,
+                "genre": genre,
+                "publishedDate": published_date,
                 "isbn": isbn,
                 "image_url": local_image_path,
                 "created_at": timestamp,
@@ -212,7 +220,7 @@ class StorageManager:
                 return local_path
         return None
 
-    def update_book_metadata(self, book_id: str, title: str, author: str, isbn: str) -> Optional[Dict]:
+    def update_book_metadata(self, book_id: str, title: str, author: str, isbn: str, genre: str = None) -> Optional[Dict]:
         """Updates basic metadata for a book."""
         data = self._load_data()
         book = next((b for b in data if b['id'] == book_id), None)
@@ -223,6 +231,8 @@ class StorageManager:
         book['title'] = title
         book['author'] = author
         book['isbn'] = isbn
+        if genre is not None:
+            book['genre'] = genre
         book['last_updated'] = datetime.now().isoformat()
         
         self._save_data(data)

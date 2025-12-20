@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+import json
 import os
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
@@ -10,11 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from verifier import BookVerifier
 from summarizer import BookSummarizer
 from config_manager import ConfigManager
+from storage_manager import StorageManager
 
 load_dotenv()
 
 app = FastAPI(title="Pustaka+ API")
 config_manager = ConfigManager()
+storage_manager = StorageManager()
 
 # Ensure covers directory exists for static mounting
 COVERS_DIR = os.path.join(os.path.dirname(__file__), 'covers')
@@ -55,6 +58,7 @@ class MetadataUpdateRequest(BaseModel):
     title: str
     author: str
     isbn: str
+    genre: Optional[str] = None
 
 @app.get("/")
 def read_root():
@@ -110,6 +114,12 @@ class SummarizationRequest(BaseModel):
     provider: Optional[str] = "OpenRouter"
     base_url: Optional[str] = None
     partial_content: Optional[str] = None
+    enhance_quality: Optional[bool] = False
+    
+class SynthesisRequest(BaseModel):
+    summary_ids: List[str]
+    model: Optional[str] = None
+    provider: Optional[str] = "OpenRouter"
 
 
 @app.post("/api/summarize")
@@ -133,10 +143,64 @@ def summarize_book(req: SummarizationRequest):
         base_url=base_url
     )
     
+    if req.enhance_quality:
+        # Note: Tournament mode is non-streaming for now because judging needs all drafts
+        result = summarizer.summarize_tournament(req.metadata)
+        
+        # We wrap it in a pseudo-stream for frontend compatibility if needed, 
+        # or just return as a single event. Let's return as a single data event.
+        def event_generator():
+            yield f"data: {json.dumps({'content': result.get('content', '')})}\n\n"
+            yield f"data: {json.dumps({'done': True, **{k:v for k,v in result.items() if k != 'content'}})}\n\n"
+            
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+
     return StreamingResponse(
         summarizer.summarize_stream(req.metadata, partial_content=req.partial_content),
         media_type="text/event-stream"
     )
+
+@app.post("/api/synthesize")
+def synthesize_summaries(req: SynthesisRequest):
+    data = storage_manager.get_all_summaries()
+    
+    # Extract draf contents based on IDs
+    drafts = []
+    source_models = []
+    title = "Unknown"
+    author = "Unknown"
+    genre = ""
+    year = ""
+    
+    for book in data:
+        for s in book['summaries']:
+            if s['id'] in req.summary_ids:
+                drafts.append(s['summary_content'])
+                source_models.append(s.get('model', 'Unknown'))
+                title = book['title']
+                author = book['author']
+                genre = book.get('genre', '')
+                year = book.get('publishedDate', '')
+
+    if not drafts:
+        raise HTTPException(status_code=404, detail="No matching summaries found for synthesis.")
+
+    # API Configuration
+    config = config_manager.load_config()
+    provider = req.provider or config.get("provider", "OpenRouter")
+    api_key = (config.get("openrouter_key") if provider == "OpenRouter" else config.get("groq_key"))
+    model = req.model or (config.get("openrouter_model") if provider == "OpenRouter" else config.get("groq_model"))
+    base_url = config.get("ollama_base_url")
+
+    summarizer = BookSummarizer(api_key=api_key, model_name=model, provider=provider, base_url=base_url)
+    
+    result = summarizer.summarize_synthesize(title, author, genre, year, drafts)
+    
+    def event_generator():
+        yield f"data: {json.dumps({'content': result.get('content', '')})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'source_models': source_models, **{k:v for k,v in result.items() if k != 'content'}})}\n\n"
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/api/models")
@@ -199,9 +263,6 @@ def list_models(req: Dict):
 
 
 # --- Saved Summaries Endpoints ---
-from storage_manager import StorageManager
-
-storage_manager = StorageManager()
 
 class SaveSummaryRequest(BaseModel):
     title: str
@@ -240,7 +301,7 @@ def update_book_cover(book_id: str, request: CoverUpdateRequest):
 
 @app.put("/api/books/{book_id}/metadata")
 def update_book_metadata(book_id: str, request: MetadataUpdateRequest):
-    updated_book = storage_manager.update_book_metadata(book_id, request.title, request.author, request.isbn)
+    updated_book = storage_manager.update_book_metadata(book_id, request.title, request.author, request.isbn, request.genre)
     if not updated_book:
         raise HTTPException(status_code=404, detail="Book not found")
     return updated_book

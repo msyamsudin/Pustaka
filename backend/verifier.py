@@ -37,6 +37,7 @@ class BookVerifier:
                         "authors": book_info.get("authors", []),
                         "isbn": self._extract_isbn_google(book_info.get("industryIdentifiers", [])),
                         "publishedDate": book_info.get("publishedDate"),
+                        "genre": ", ".join(book_info.get("categories", [])) if book_info.get("categories") else "",
                         "description": book_info.get("description", ""),
                         "image_url": self._upgrade_google_image(book_info.get("imageLinks", {}).get("thumbnail", ""))
                     }
@@ -78,6 +79,7 @@ class BookVerifier:
                         "authors": book_info.get("author_name", []),
                         "isbn": book_info.get("isbn", [""])[0], # Just take first
                         "publishedDate": book_info.get("first_publish_year"),
+                        "genre": ", ".join(book_info.get("subject", [])[:3]) if book_info.get("subject") else "",
                         "description": "", # Search API rarely gives full desc.
                         "image_url": f"https://covers.openlibrary.org/b/id/{book_info.get('cover_i')}-L.jpg" if book_info.get('cover_i') else ""
                     }

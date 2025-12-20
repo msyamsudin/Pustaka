@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check } from 'lucide-react';
+import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
 
@@ -344,6 +344,16 @@ const MetadataEditModal = ({ isOpen, book, title, author, isbn, setTitle, setAut
             onChange={(e) => setIsbn(e.target.value)}
           />
         </div>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Genre</label>
+          <input
+            type="text"
+            className="input-field"
+            value={genre}
+            onChange={(e) => setGenre(e.target.value)}
+            placeholder="Contoh: Computer Science, Fiction"
+          />
+        </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
           <button className="btn-secondary" onClick={onClose} disabled={isSaving}>Batal</button>
           <button className="btn-primary" onClick={onSave} disabled={isSaving}>
@@ -405,6 +415,9 @@ function App() {
   // Streaming & UI Enhancements
   const [streamingStatus, setStreamingStatus] = useState('');
   const [tokensReceived, setTokensReceived] = useState(0);
+  const [highQuality, setHighQuality] = useState(false);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedVariantIds, setSelectedVariantIds] = useState([]);
   const abortControllerRef = useRef(null);
 
   const [isStuck, setIsStuck] = useState(false);
@@ -537,6 +550,7 @@ function App() {
   const [metadataTitle, setMetadataTitle] = useState("");
   const [metadataAuthor, setMetadataAuthor] = useState("");
   const [metadataIsbn, setMetadataIsbn] = useState("");
+  const [metadataGenre, setMetadataGenre] = useState("");
   const [isSavingMetadata, setIsSavingMetadata] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
 
@@ -585,6 +599,7 @@ function App() {
         usage_stats: usageStats || {},
         metadata: {
           isbn: isbn,
+          genre: currentBook?.genre || (verificationResult.sources.find(s => s.genre)?.genre || ""),
           sources: verificationResult.sources,
           image_url: imageUrl
         }
@@ -678,10 +693,27 @@ function App() {
     }
     setShowLibrary(false);
 
-    setTitle(book.title);
-    setAuthor(book.author);
     setIsbn(book.isbn || '');
-    setVerificationResult({ is_valid: true, sources: [], message: "Loaded from Library", title: book.title, authors: [book.author] });
+
+    // Populate verificationResult with a source reconstructed from saved data
+    // This is CRITICAL for 'Regenerate' and other features that read from verificationResult.sources
+    const reconstructedSource = {
+      source: "Library",
+      title: book.title,
+      author: book.author,
+      genre: book.genre || "",
+      image_url: book.image_url || "",
+      description: "Data dimuat dari perpustakaan lokal."
+    };
+
+    setVerificationResult({
+      is_valid: true,
+      sources: [reconstructedSource],
+      status: 'success',
+      message: "Loaded from Library",
+      title: book.title,
+      authors: [book.author]
+    });
   };
 
   const loadVariant = (variant) => {
@@ -815,8 +847,8 @@ function App() {
     setExistingSummary(null);
   }, [verificationResult, provider, openRouterModel, groqModel, ollamaModel, isbn, title, author, savedSummaries]);
 
-  const handleSummarize = async (isResume = false) => {
-    if (existingSummary && !isResume) {
+  const handleSummarize = async (isResume = false, force = false, overrideConfig = null) => {
+    if (existingSummary && !isResume && !force) {
       setCurrentBook(existingSummary.book);
       loadVariant(existingSummary.variant);
       showToast("Memuat rangkuman tersimpan...", "success");
@@ -834,7 +866,7 @@ function App() {
       setCurrentVariant(null);
       setTokensReceived(0);
     }
-    setStreamingStatus(isResume ? "Menghubungkan kembali..." : `Menghubungkan ke ${provider}...`);
+    setStreamingStatus(isResume ? "Menghubungkan kembali..." : (highQuality ? "Memulai Turnamen Rangkuman (Best-of-N)..." : `Menghubungkan ke ${overrideConfig ? overrideConfig.provider : provider}...`));
 
     abortControllerRef.current = new AbortController();
 
@@ -847,11 +879,14 @@ function App() {
         signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           metadata: verificationResult.sources,
-          provider: provider,
-          api_key: provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : null),
-          model: provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel),
-          base_url: provider === 'Ollama' ? ollamaBaseUrl : null,
-          partial_content: isResume ? summary : null
+          provider: overrideConfig ? overrideConfig.provider : provider,
+          api_key: overrideConfig
+            ? (overrideConfig.provider === 'OpenRouter' ? openRouterKey : overrideConfig.provider === 'Groq' ? groqKey : null)
+            : (provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : null)),
+          model: overrideConfig ? overrideConfig.model : (provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)),
+          base_url: overrideConfig ? overrideConfig.base_url : (provider === 'Ollama' ? ollamaBaseUrl : null),
+          partial_content: isResume ? summary : null,
+          enhance_quality: highQuality
         }),
       });
 
@@ -902,8 +937,13 @@ function App() {
                   provider: data.provider,
                   tokens: data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
                   cost_estimate: data.cost_estimate || { total_usd: 0, total_idr: 0, is_free: true },
-                  duration_seconds: data.duration_seconds
+                  duration_seconds: data.duration_seconds,
+                  is_enhanced: data.is_enhanced,
+                  draft_count: data.draft_count
                 });
+                if (data.is_enhanced) {
+                  showToast("Kualitas ditingkatkan via Tournament Mode", "success");
+                }
               }
             } catch (e) {
               console.error("Error parsing stream chunk", e, line);
@@ -923,6 +963,131 @@ function App() {
       setSummarizing(false);
       setStreamingStatus('');
       abortControllerRef.current = null;
+    }
+  };
+
+  const handleSynthesize = async () => {
+    if (selectedVariantIds.length < 2) {
+      showAlert("Pilih Minimal 2", "Silakan pilih setidaknya 2 versi rangkuman untuk disintesis.");
+      return;
+    }
+
+    setSummarizing(true);
+    setStreamingStatus("Menyintesis varian terpilih...");
+    setError(null);
+    setSummary(null);
+    setUsageStats(null);
+    setSavedId(null);
+    setCurrentVariant(null);
+    setTokensReceived(0);
+
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/synthesize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: abortControllerRef.current.signal,
+        body: JSON.stringify({
+          summary_ids: selectedVariantIds,
+          provider: provider,
+          model: provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Gagal menyintesis rangkuman.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedSummary = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.error) throw new Error(data.error);
+
+              if (data.content) {
+                accumulatedSummary += data.content;
+                setSummary(accumulatedSummary);
+              }
+
+              if (data.done) {
+                setUsageStats({
+                  model: data.model,
+                  provider: data.provider,
+                  tokens: data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                  cost_estimate: data.cost_estimate || { total_usd: 0, total_idr: 0, is_free: true },
+                  duration_seconds: data.duration_seconds,
+                  is_synthesis: true,
+                  source_count: data.source_draft_count,
+                  source_models: data.source_models || []
+                });
+                showToast("Sintesis berhasil!", "success");
+              }
+            } catch (e) {
+              console.error("Syntax error in stream", e);
+            }
+          }
+        }
+      }
+      setIsSelectionMode(false);
+      setSelectedVariantIds([]);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        showToast("Sintesis dibatalkan", "info");
+      } else {
+        setError(`Sintesis Gagal: ${err.message}`);
+      }
+    } finally {
+      setSummarizing(false);
+      setStreamingStatus("");
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleRegenerate = () => {
+    if (!currentVariant) {
+      handleSummarize(false, true);
+      return;
+    }
+
+    const originalProvider = currentVariant.usage_stats?.provider || currentVariant.provider || "OpenRouter";
+    const originalModel = currentVariant.usage_stats?.model || currentVariant.model || "Unknown";
+    const originalBaseUrl = currentVariant.usage_stats?.base_url;
+
+    const currentActiveModel = provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel);
+
+    // Check for mismatch
+    const isModelMismatch = (originalProvider !== provider) || (originalModel !== currentActiveModel);
+
+    const configToUse = {
+      provider: originalProvider,
+      model: originalModel,
+      base_url: originalBaseUrl || ollamaBaseUrl
+    };
+
+    if (isModelMismatch) {
+      showConfirm(
+        "Konfirmasi Generate Ulang",
+        `Rangkuman ini dibuat dengan model "${originalModel.split('/').pop()}" (${originalProvider}). Pengaturan Anda saat ini adalah "${currentActiveModel.split('/').pop()}" (${provider}).\n\nIngin tetap menggunakan model asli untuk hasil yang konsisten?`,
+        () => handleSummarize(false, true, configToUse),
+        false
+      );
+    } else {
+      handleSummarize(false, true);
     }
   };
 
@@ -995,6 +1160,7 @@ function App() {
     setTitle('');
     setAuthor('');
     setVerificationResult(null);
+    setMetadataGenre("");
     setSummary(null);
     setUsageStats(null);
     setSavedId(null);
@@ -1005,6 +1171,9 @@ function App() {
     setShowSettings(false);
     setShowLibrary(false);
     setShowHistory(false);
+    setHighQuality(false);
+    setIsSelectionMode(false);
+    setSelectedVariantIds([]);
   };
 
   const handleCopy = () => {
@@ -1023,7 +1192,8 @@ function App() {
       const response = await axios.put(`${API_BASE_URL}/books/${metadataEditBook.id}/metadata`, {
         title: metadataTitle,
         author: metadataAuthor,
-        isbn: metadataIsbn
+        isbn: metadataIsbn,
+        genre: metadataGenre
       });
 
       // Update local state
@@ -1049,13 +1219,25 @@ function App() {
   useEffect(() => {
     if (!summarizing || summary || (tokensReceived > 0)) return;
 
-    const messages = [
+    const messages = highQuality ? [
+      "Menghasilkan beberapa draf paralel...",
+      "Menganalisis draf terbaik...",
+      "Hakim sedang menimbang akurasi...",
+      "Menyintesis poin-poin emas...",
+      "Finalisasi draf final..."
+    ] : (isSelectionMode ? [
+      "Membaca varian yang dipilih...",
+      "Membandingkan argumen antar varian...",
+      "Hakim sedang menyusun sintesis...",
+      "Menggabungkan insight terbaik...",
+      "Menyelesaikan output final..."
+    ] : [
       "Menghubungkan ke Neural Network...",
       "Mengekstrak Entitas & Istilah Kunci...",
       "Menyusun Kerangka Logika...",
       "Memadatkan Informasi (Chain of Density)...",
       "Finalisasi Format Output..."
-    ];
+    ]);
 
     let index = 0;
 
@@ -1476,6 +1658,7 @@ function App() {
                               setMetadataTitle(book.title);
                               setMetadataAuthor(book.author);
                               setMetadataIsbn(book.isbn || "");
+                              setMetadataGenre(book.genre || "");
                               setIsMetadataModalOpen(true);
                             }}
                             style={{
@@ -1753,23 +1936,56 @@ function App() {
                 )}
                 <div style={{ flex: 1, textAlign: 'center', alignSelf: 'center' }}>
                   {!summary && (
-                    <button
-                      onClick={() => handleSummarize(false)}
-                      className="btn-primary"
-                      disabled={summarizing}
-                      style={{
-                        backgroundColor: existingSummary ? 'var(--success)' : '',
-                        borderColor: existingSummary ? 'var(--success)' : '',
-                        padding: '1rem 2rem',
-                        fontSize: '1.1rem'
-                      }}
-                    >
-                      {existingSummary ? (
-                        <><BookOpen size={20} style={{ marginRight: '10px' }} /> Buka Rangkuman Tersimpan</>
-                      ) : (
-                        summarizing ? <><span className="spinner"></span> Sedang Merangkum...</> : <><Sparkles size={20} style={{ marginRight: '10px' }} /> Generate Rangkuman AI</>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        background: 'rgba(255,255,255,0.03)',
+                        padding: '0.5rem 1rem',
+                        borderRadius: '20px',
+                        border: '1px solid var(--border-color)',
+                        cursor: 'pointer'
+                      }} onClick={() => setHighQuality(!highQuality)}>
+                        <div className={`toggle-switch ${highQuality ? 'active' : ''}`} style={{
+                          width: '36px', height: '18px', background: highQuality ? 'var(--accent-color)' : '#333',
+                          borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
+                        }}>
+                          <div style={{
+                            width: '14px', height: '14px', background: 'white', borderRadius: '50%',
+                            position: 'absolute', top: '2px', left: highQuality ? '20px' : '2px', transition: 'all 0.3s'
+                          }}></div>
+                        </div>
+                        <span style={{ fontSize: '0.85rem', fontWeight: '500', color: highQuality ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
+                          Mode Kualitas Tinggi (Best-of-N)
+                        </span>
+                        <Sparkles size={14} color={highQuality ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={highQuality ? 1 : 0.5} />
+                      </div>
+
+                      <button
+                        onClick={() => handleSummarize(false)}
+                        className="btn-primary"
+                        disabled={summarizing}
+                        style={{
+                          backgroundColor: existingSummary ? 'var(--success)' : '',
+                          borderColor: existingSummary ? 'var(--success)' : '',
+                          padding: '1rem 2rem',
+                          fontSize: '1.1rem'
+                        }}
+                      >
+                        {existingSummary ? (
+                          <><BookOpen size={20} style={{ marginRight: '10px' }} /> Buka Rangkuman Tersimpan</>
+                        ) : (
+                          summarizing ? <><span className="spinner"></span> Sedang Merangkum...</> : <><Sparkles size={20} style={{ marginRight: '10px' }} /> Generate Rangkuman AI</>
+                        )}
+                      </button>
+
+                      {highQuality && !existingSummary && (
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                          * Mode ini menggunakan biaya token 4x-5x lebih banyak (3 draf + 1 hakim).
+                        </p>
                       )}
-                    </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1814,8 +2030,31 @@ function App() {
             {/* Version Switcher if multiple versions available */}
             {currentBook && currentBook.summaries && currentBook.summaries.length > 1 && (
               <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-                  Versi Rangkuman (Pilih Model)
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)' }}>
+                    Versi Rangkuman (Pilih Model)
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button
+                      onClick={() => {
+                        setIsSelectionMode(!isSelectionMode);
+                        setSelectedVariantIds([]);
+                      }}
+                      className="btn-secondary"
+                      style={{ padding: '0.2rem 0.6rem', fontSize: '0.75rem', minWidth: 'auto', border: isSelectionMode ? '1px solid var(--accent-color)' : '' }}
+                    >
+                      {isSelectionMode ? "Batal Seleksi" : "Sintesis Varian"}
+                    </button>
+                    {isSelectionMode && selectedVariantIds.length >= 2 && (
+                      <button
+                        onClick={handleSynthesize}
+                        className="btn-primary"
+                        style={{ padding: '0.2rem 0.6rem', fontSize: '0.75rem', minWidth: 'auto' }}
+                      >
+                        <Sparkles size={12} style={{ marginRight: '4px' }} /> Gabungkan ({selectedVariantIds.length})
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {Object.entries(
@@ -1829,29 +2068,60 @@ function App() {
                   <div key={providerName} style={{ marginBottom: providerName === Object.keys(currentBook.summaries.reduce((acc, v) => { const p = v.usage_stats?.provider || 'Other'; if (!acc[p]) acc[p] = []; acc[p].push(v); return acc; }, {})).pop() ? 0 : '0.75rem' }}>
                     <div style={{ fontSize: '0.7rem', color: 'var(--accent-color)', marginBottom: '0.4rem', fontWeight: '600', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {providerName.toUpperCase()}
-                      {getAverageDuration(providerName) && (
+                      {getAverageDuration(providerName) && !isSelectionMode && (
                         <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal', fontSize: '0.65rem' }}>
                           (Rata-rata: {getAverageDuration(providerName)}s)
                         </span>
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      {variants.map((variant) => (
-                        <button
-                          key={variant.id}
-                          onClick={() => loadVariant(variant)}
-                          className={currentVariant && currentVariant.id === variant.id ? "btn-primary" : "btn-secondary"}
-                          style={{
-                            fontSize: '0.8rem',
-                            padding: '0.25rem 0.75rem',
-                            opacity: currentVariant && currentVariant.id === variant.id ? 1 : 0.7,
-                            minWidth: 'auto',
-                            borderColor: currentVariant && currentVariant.id === variant.id ? 'var(--accent-color)' : ''
-                          }}
-                        >
-                          {variant.model ? variant.model.split('/').pop() : 'Unknown'}
-                        </button>
-                      ))}
+                      {variants.map((variant) => {
+                        const isSelected = selectedVariantIds.includes(variant.id);
+                        return (
+                          <button
+                            key={variant.id}
+                            onClick={() => {
+                              if (isSelectionMode) {
+                                setSelectedVariantIds(prev =>
+                                  isSelected ? prev.filter(id => id !== variant.id) : [...prev, variant.id]
+                                );
+                              } else {
+                                loadVariant(variant);
+                              }
+                            }}
+                            className={currentVariant && currentVariant.id === variant.id && !isSelectionMode ? "btn-primary" : "btn-secondary"}
+                            style={{
+                              fontSize: '0.8rem',
+                              padding: '0.25rem 0.75rem',
+                              opacity: (currentVariant && currentVariant.id === variant.id && !isSelectionMode) || isSelected ? 1 : 0.7,
+                              minWidth: 'auto',
+                              borderColor: (currentVariant && currentVariant.id === variant.id && !isSelectionMode) || isSelected ? 'var(--accent-color)' : '',
+                              position: 'relative',
+                              paddingLeft: isSelectionMode ? '2rem' : '0.75rem'
+                            }}
+                          >
+                            {isSelectionMode && (
+                              <div style={{
+                                position: 'absolute', left: '0.5rem', top: '50%', transform: 'translateY(-50%)',
+                                width: '14px', height: '14px', borderRadius: '3px', border: '1px solid var(--border-color)',
+                                backgroundColor: isSelected ? 'var(--accent-color)' : 'transparent',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                              }}>
+                                {isSelected && <Check size={10} color="white" />}
+                              </div>
+                            )}
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              {variant.model ? variant.model.split('/').pop() : 'Unknown'}
+                              {Object.keys(variant.usage_stats || {}).length > 0 && (
+                                <div style={{ display: 'flex', gap: '2px' }}>
+                                  {variant.usage_stats?.is_synthesis && <Sparkles size={10} color="#9333ea" title="Hasil Sintesis" />}
+                                  {variant.usage_stats?.is_enhanced && <Sparkles size={10} color="#d4af37" title="Kualitas Tinggi" />}
+                                </div>
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -1896,6 +2166,22 @@ function App() {
                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {currentBook ? currentBook.author : (verificationResult?.sources[0]?.author || author)}
                       </span>
+                      {((currentBook && currentBook.genre) || (verificationResult?.sources?.find(s => s.genre)?.genre)) && !isStuck && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '0.15rem 0.6rem',
+                          background: 'rgba(255,255,255,0.05)',
+                          borderRadius: '12px',
+                          fontSize: '0.7rem',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid rgba(255,255,255,0.1)'
+                        }}>
+                          <Tag size={10} />
+                          {currentBook ? currentBook.genre : verificationResult.sources.find(s => s.genre).genre}
+                        </div>
+                      )}
                       {summarizing && (
                         <div className="token-badge-realtime animate-fade-in" style={{
                           padding: isStuck ? '0.1rem 0.5rem' : '0.25rem 0.75rem',
@@ -1929,7 +2215,7 @@ function App() {
                   {!summarizing && summary && (
                     <>
                       <button
-                        onClick={() => handleSummarize(false)}
+                        onClick={handleRegenerate}
                         className="btn-secondary"
                         title="Generate Ulang"
                         style={{
@@ -2046,6 +2332,20 @@ function App() {
                       Token: {usageStats.tokens.total_tokens}
                     </span>
                   )}
+                  {usageStats?.is_enhanced && (
+                    <span className="badge" style={{ background: 'rgba(212, 175, 55, 0.1)', color: '#d4af37', border: '1px solid rgba(212, 175, 55, 0.3)' }}>
+                      <Sparkles size={12} style={{ marginRight: '4px' }} /> High Quality ({usageStats.draft_count} draf)
+                    </span>
+                  )}
+                  {usageStats?.is_synthesis && (
+                    <span className="badge"
+                      style={{ background: 'rgba(147, 51, 234, 0.1)', color: '#9333ea', border: '1px solid rgba(147, 51, 234, 0.3)' }}
+                      title={usageStats.source_models?.length > 0 ? `Gabungan dari: ${usageStats.source_models.map(m => m.split('/').pop()).join(', ')}` : "Hasil Sintesis"}
+                    >
+                      <Sparkles size={12} style={{ marginRight: '4px' }} />
+                      Hasil Sintesis ({usageStats.source_count} Varian: {usageStats.source_models?.map(m => m.split('/').pop()).join(', ')})
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -2096,9 +2396,11 @@ function App() {
         title={metadataTitle}
         author={metadataAuthor}
         isbn={metadataIsbn}
+        genre={metadataGenre}
         setTitle={setMetadataTitle}
         setAuthor={setMetadataAuthor}
         setIsbn={setMetadataIsbn}
+        setGenre={setMetadataGenre}
         onSave={handleUpdateMetadata}
         onClose={() => setIsMetadataModalOpen(false)}
         isSaving={isSavingMetadata}
