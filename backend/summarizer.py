@@ -555,6 +555,66 @@ class BookSummarizer:
                 "usage": usage_total
             }
 
+    def summarize_synthesize(self, title: str, author: str, genre: str, year: str, drafts: List[str]) -> Dict:
+        """Synthesize multiple drafts into a final summary (non-streaming)"""
+        if not drafts:
+            return {"error": "No drafts provided for synthesis"}
+
+        prompt = self._get_full_prompt(
+            title,
+            author,
+            genre,
+            year,
+            "", # context_description
+            "", # source_note
+            mode="judge",
+            drafts=drafts
+        )
+
+        try:
+            start_time = time.time()
+            
+            if self.provider == "Ollama":
+                res = self._summarize_ollama(prompt, start_time)
+                if "content" in res:
+                    res["is_synthesized"] = True
+                    res["draft_count"] = len(drafts)
+                return res
+            
+            if not self.client:
+                return {"error": "AI client not initialized"}
+            
+            with self._client_lock:
+                completion = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+            
+            end_time = time.time()
+            duration = round(end_time - start_time, 2)
+            
+            usage = completion.usage
+            raw_content = completion.choices[0].message.content
+            cleaned_content = self._clean_output(raw_content)
+            
+            return {
+                "content": cleaned_content,
+                "usage": {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens
+                },
+                "model": self.model_name,
+                "provider": self.provider,
+                "cost_estimate": self._calculate_cost(usage.prompt_tokens, usage.completion_tokens),
+                "duration_seconds": duration,
+                "is_synthesized": True,
+                "draft_count": len(drafts)
+            }
+        except Exception as e:
+            return {"error": f"Failed to synthesize summaries: {str(e)}"}
+
+
     def _get_full_prompt(
         self, 
         title: str, 
