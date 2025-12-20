@@ -1,5 +1,5 @@
 # 📚 Pustaka+
-Aplikasi ini mensintesis beragam konsep kunci hingga nilai aplikatif menggunakan bantuan AI.
+Aplikasi yang berfungsi untuk mensintesis beragam konsep kunci hingga nilai aplikatif menggunakan bantuan AI.
 
 ## ✨ Fitur Utama
 - **Analytical Briefing Engine**: Menghasilkan analisis mendalam dengan struktur 9-bagian (Identitas, Sinopsis, Konsep Kunci, Analisis Kontekstual, hingga Applied Value), bukan sekadar ringkasan biasa.
