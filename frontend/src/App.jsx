@@ -290,7 +290,7 @@ const SkeletonSummary = ({ status, onStop }) => (
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <div className="spinner" style={{ width: '20px', height: '20px' }}></div>
         <span style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-          {status || "Sedang berkomunikasi dengan AI..."}
+          {status || "Initializing intelligence synthesis engine..."}
         </span>
       </div>
       <button
@@ -608,7 +608,7 @@ function App() {
       const newVariant = response.data;
       setSavedId(newVariant.id);
       setCurrentVariant(newVariant);
-      showToast("Rangkuman berhasil disimpan");
+      showToast("Intelligence Brief berhasil disimpan");
       loadSavedSummaries();
     } catch (err) {
       showAlert("Gagal Menyimpan", "Terjadi kesalahan saat menyimpan rangkuman.");
@@ -622,8 +622,8 @@ function App() {
     const modelName = currentVariant.model ? currentVariant.model.split('/').pop() : "Unknown Model";
 
     showConfirm(
-      "Hapus Rangkuman",
-      `Apakah Anda yakin ingin menghapus rangkuman buku "${bookTitle}" versi model "${modelName}" dari pustaka?`,
+      "Hapus Intelligence Brief",
+      `Apakah Anda yakin ingin menghapus brief buku "${bookTitle}" versi model "${modelName}" dari arsip?`,
       () => performDeleteCurrent(savedId),
       true
     );
@@ -654,7 +654,7 @@ function App() {
         setSavedId(null);
       }
 
-      showToast("Rangkuman dihapus dari pustaka.", "success");
+      showToast("Intelligence Brief dihapus dari arsip.", "success");
     } catch (err) {
       console.error("Delete failed:", err);
       showAlert("Error", "Gagal menghapus rangkuman.");
@@ -676,7 +676,7 @@ function App() {
       if (currentBook && currentBook.id === bookToDelete.id) {
         handleReset();
       }
-      showAlert("Terhapus", `Buku "${bookToDelete.title}" dihapus dari pustaka.`);
+      showAlert("Terhapus", `Buku "${bookToDelete.title}" dihapus dari arsip.`);
     } catch (err) {
       console.error("Failed to delete book", err);
       showAlert("Error", "Gagal menghapus buku.");
@@ -851,7 +851,7 @@ function App() {
     if (existingSummary && !isResume && !force) {
       setCurrentBook(existingSummary.book);
       loadVariant(existingSummary.variant);
-      showToast("Memuat rangkuman tersimpan...", "success");
+      showToast("Memuat Intelligence Brief tersimpan...", "success");
       return;
     }
 
@@ -866,7 +866,7 @@ function App() {
       setCurrentVariant(null);
       setTokensReceived(0);
     }
-    setStreamingStatus(isResume ? "Menghubungkan kembali..." : (highQuality ? "Memulai Turnamen Rangkuman (Best-of-N)..." : `Menghubungkan ke ${overrideConfig ? overrideConfig.provider : provider}...`));
+    setStreamingStatus(isResume ? "Re-establishing knowledge gateway..." : (highQuality ? "Initiating Intelligence Tournament (Best-of-N)..." : `Connecting to ${overrideConfig ? overrideConfig.provider : provider} synthesis node...`));
 
     abortControllerRef.current = new AbortController();
 
@@ -895,7 +895,7 @@ function App() {
         throw new Error(errorData.detail || "Gagal membuat rangkuman.");
       }
 
-      setStreamingStatus(isResume ? "Melanjutkan penulisan..." : "AI sedang menganalisis struktur buku...");
+      setStreamingStatus(isResume ? "Resuming synthesis flow..." : "AI is analyzing conceptual book architecture...");
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedSummary = (isResume === true && summary) ? summary : "";
@@ -922,7 +922,7 @@ function App() {
 
               if (data.content) {
                 if (firstChunk) {
-                  setStreamingStatus(isResume ? "Melanjutkan penulisan..." : "Menghasilkan rangkuman...");
+                  setStreamingStatus(isResume ? "Resuming synthesis flow..." : "Generating intelligence brief...");
                   firstChunk = false;
                 }
                 accumulatedSummary += data.content;
@@ -968,7 +968,7 @@ function App() {
 
   const handleSynthesize = async () => {
     if (selectedVariantIds.length < 2) {
-      showAlert("Pilih Minimal 2", "Silakan pilih setidaknya 2 versi rangkuman untuk disintesis.");
+      showAlert("Pilih Minimal 2", "Silakan pilih setidaknya 2 versi brief untuk disintesis.");
       return;
     }
 
@@ -999,7 +999,7 @@ function App() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || "Gagal menyintesis rangkuman.");
+        throw new Error(errorData.detail || "Gagal menyintesis intelligence brief.");
       }
 
       const reader = response.body.getReader();
@@ -1082,7 +1082,7 @@ function App() {
     if (isModelMismatch) {
       showConfirm(
         "Konfirmasi Generate Ulang",
-        `Rangkuman ini dibuat dengan model "${originalModel.split('/').pop()}" (${originalProvider}). Pengaturan Anda saat ini adalah "${currentActiveModel.split('/').pop()}" (${provider}).\n\nIngin tetap menggunakan model asli untuk hasil yang konsisten?`,
+        `Brief ini dibuat dengan model "${originalModel.split('/').pop()}" (${originalProvider}). Pengaturan Anda saat ini adalah "${currentActiveModel.split('/').pop()}" (${provider}).\n\nIngin tetap menggunakan model asli untuk hasil yang konsisten?`,
         () => handleSummarize(false, true, configToUse),
         false
       );
@@ -1220,23 +1220,23 @@ function App() {
     if (!summarizing || summary || (tokensReceived > 0)) return;
 
     const messages = highQuality ? [
-      "Menghasilkan beberapa draf paralel...",
-      "Menganalisis draf terbaik...",
-      "Hakim sedang menimbang akurasi...",
-      "Menyintesis poin-poin emas...",
-      "Finalisasi draf final..."
+      "Generating parallel knowledge drafts...",
+      "Performing comparative analysis...",
+      "The Judge is weighting analytical precision...",
+      "Synthesizing gold-standard insights...",
+      "Finalizing intelligence artifact..."
     ] : (isSelectionMode ? [
-      "Membaca varian yang dipilih...",
-      "Membandingkan argumen antar varian...",
-      "Hakim sedang menyusun sintesis...",
-      "Menggabungkan insight terbaik...",
-      "Menyelesaikan output final..."
+      "Reading selected variants...",
+      "Comparing arguments across nodes...",
+      "Synthesizing cross-variant insights...",
+      "Merging best-of-breed intelligence...",
+      "Finalizing consolidated brief..."
     ] : [
-      "Menghubungkan ke Neural Network...",
-      "Mengekstrak Entitas & Istilah Kunci...",
-      "Menyusun Kerangka Logika...",
-      "Memadatkan Informasi (Chain of Density)...",
-      "Finalisasi Format Output..."
+      "Establishing connection to knowledge synthesis grid...",
+      "Extracting core entities & technical terms...",
+      "Constructing reasoned blueprint...",
+      "Applying Chain of Density compression...",
+      "Finalizing knowledge artifact structure..."
     ]);
 
     let index = 0;
@@ -1326,7 +1326,7 @@ function App() {
             <button
               onClick={() => { handleReset(); setShowSettings(false); }}
               style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
-              title="Cari Buku Baru"
+              title="Initialize New Synthesis"
             >
               <Home size={24} />
             </button>
@@ -1337,7 +1337,7 @@ function App() {
                 setShowLibrary(false);
               }}
               style={{ background: 'none', border: 'none', color: showHistory ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer' }}
-              title="Riwayat Pencarian"
+              title="Research History"
             >
               <History size={24} />
             </button>
@@ -1348,7 +1348,7 @@ function App() {
                 setShowHistory(false);
               }}
               style={{ background: 'none', border: 'none', color: showLibrary ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer' }}
-              title="Perpustakaan (Tersimpan)"
+              title="Archived Intel (Saved)"
             >
               <BookOpen size={24} />
             </button>
@@ -1357,6 +1357,12 @@ function App() {
           <h1 style={{ fontSize: '3rem', margin: '0 0 0.5rem 0' }}>
             <span className="title-gradient">Pustaka+</span>
           </h1>
+          <p style={{ fontSize: '1rem', color: 'var(--text-secondary)', fontWeight: '500', marginTop: '-0.5rem', letterSpacing: '1px' }}>
+            Advanced Synthetic Analytical Briefing
+          </p>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', opacity: 0.7, marginTop: '0.25rem', fontStyle: 'italic' }}>
+            Deep-tier knowledge synthesis engine for high-stakes intelligence.
+          </p>
 
         </header>
 
@@ -1583,7 +1589,7 @@ function App() {
             <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', fontSize: '1.25rem' }}>
                 <BookOpen size={20} style={{ marginRight: '10px', color: 'var(--accent-color)' }} />
-                Perpustakaan Tersimpan
+                Archived Intel
               </h3>
               <button
                 onClick={() => setShowLibrary(false)}
@@ -1602,7 +1608,7 @@ function App() {
             >
               {savedSummaries.length === 0 ? (
                 <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
-                  Belum ada rangkuman tersimpan.
+                  Belum ada brief tersimpan.
                 </div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1.5rem' }}>
@@ -1687,7 +1693,7 @@ function App() {
 
                         <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '0.7rem' }}>
-                            {book.summaries.length} Versi
+                            {book.summaries.length} Artifacts
                           </span>
                           <button
                             onClick={(e) => handleDeleteBook(book.id, e)}
@@ -1719,7 +1725,7 @@ function App() {
             <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', fontSize: '1.25rem' }}>
                 <History size={20} style={{ marginRight: '10px', color: 'var(--accent-color)' }} />
-                Riwayat Pencarian
+                Research History
               </h3>
               <button
                 onClick={() => setShowHistory(false)}
@@ -1779,7 +1785,7 @@ function App() {
                     fontSize: '0.9rem'
                   }}
                 >
-                  Bersihkan Semua Riwayat
+                  Clear Research Log
                 </button>
               </div>
             )}
@@ -1804,7 +1810,7 @@ function App() {
                   </div>
                 )}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Judul Buku</label>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Source Title</label>
                   <input
                     type="text"
                     className="input-field"
@@ -1815,7 +1821,7 @@ function App() {
                 </div>
               </div>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Penulis</label>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Primary Author / Entity</label>
                 <input
                   type="text"
                   className="input-field"
@@ -1845,7 +1851,7 @@ function App() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem' }}>
                 <button type="submit" className="btn-primary" disabled={loading} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                  {loading ? <><span className="spinner"></span> Memverifikasi...</> : <><Search size={18} style={{ marginRight: '8px' }} /> Cari & Verifikasi</>}
+                  {loading ? <><span className="spinner"></span> Validating Source...</> : <><Search size={18} style={{ marginRight: '8px' }} /> Analyze Book Source</>}
                 </button>
                 <button
                   type="button"
@@ -1855,7 +1861,7 @@ function App() {
                   title="Reset Sesi"
                 >
                   <RotateCcw size={18} />
-                  <span style={{ marginLeft: '8px' }}>Reset</span>
+                  <span style={{ marginLeft: '8px' }}>Reset Environment</span>
                 </button>
               </div>
             </form>
@@ -1876,8 +1882,8 @@ function App() {
                 )}
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.25rem' }}>
-                    {verificationResult.status === 'success' ? "Buku Terverifikasi" :
-                      verificationResult.status === 'warning' ? "Verifikasi Parsial" : "Verifikasi Gagal"}
+                    {verificationResult.status === 'success' ? "Source Verified" :
+                      verificationResult.status === 'warning' ? "Partial Match" : "Source Refined Fail"}
                   </h3>
                   <p style={{ margin: 0, color: 'var(--text-secondary)' }}>{verificationResult.message}</p>
                 </div>
@@ -1907,7 +1913,7 @@ function App() {
             {/* Synopsis Display */}
             {verificationResult.sources.length > 0 && (
               <div style={{ marginTop: '1rem' }}>
-                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)' }}>Sinopsis (Dari Sumber)</h4>
+                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)' }}>Source Intel (Abstract)</h4>
                 <p
                   className="custom-scrollbar"
                   style={{
@@ -1917,7 +1923,7 @@ function App() {
                     opacity: verificationResult.sources.some(s => s.description) ? 1 : 0.7
                   }}
                 >
-                  {verificationResult.sources.find(s => s.description)?.description || "Tidak ada deskripsi tersedia dari sumber data."}
+                  {verificationResult.sources.find(s => s.description)?.description || "No abstract available from intelligence source."}
                 </p>
               </div>
             )}
@@ -1957,7 +1963,7 @@ function App() {
                           }}></div>
                         </div>
                         <span style={{ fontSize: '0.85rem', fontWeight: '500', color: highQuality ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                          Mode Kualitas Tinggi (Best-of-N)
+                          Analytical Deep-Tier Mode (Best-of-N)
                         </span>
                         <Sparkles size={14} color={highQuality ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={highQuality ? 1 : 0.5} />
                       </div>
@@ -1974,9 +1980,9 @@ function App() {
                         }}
                       >
                         {existingSummary ? (
-                          <><BookOpen size={20} style={{ marginRight: '10px' }} /> Buka Rangkuman Tersimpan</>
+                          <><BookOpen size={20} style={{ marginRight: '10px' }} /> Load Existing Artifact</>
                         ) : (
-                          summarizing ? <><span className="spinner"></span> Sedang Merangkum...</> : <><Sparkles size={20} style={{ marginRight: '10px' }} /> Generate Rangkuman AI</>
+                          summarizing ? <><span className="spinner"></span> Synthesizing...</> : <><Sparkles size={20} style={{ marginRight: '10px' }} /> Synthesize Intelligence Brief</>
                         )}
                       </button>
 
@@ -2032,7 +2038,7 @@ function App() {
               <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                   <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)' }}>
-                    Versi Rangkuman (Pilih Model)
+                    Intelligence Artifact Variants (Model Selective)
                   </div>
                   <div style={{ display: 'flex', gap: '0.75rem' }}>
                     <button
@@ -2244,14 +2250,14 @@ function App() {
                         {copied ? (
                           <Check size={14} color="var(--success)" />
                         ) : (
-                          <Copy size={14} />
+                          <Copy size={14} title="Salin Brief" />
                         )}
                       </button>
 
                       <button
                         onClick={savedId ? handleDeleteCurrent : handleSaveSummary}
                         className={savedId ? "btn-danger" : "btn-primary"}
-                        title={savedId ? "Hapus Rangkuman" : "Simpan Rangkuman"}
+                        title={savedId ? "Archive Intel Purge" : "Commit to Archive"}
                         style={{
                           fontSize: '0.8rem',
                           padding: savedId ? '0.35rem 0.7rem' : '0.35rem 1rem',
@@ -2267,7 +2273,7 @@ function App() {
                         {savedId ? (
                           <Trash2 size={14} />
                         ) : (
-                          <><Save size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '6px' }} /> {!isStuck && "Simpan"}</>
+                          <><Save size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '6px' }} /> {!isStuck && "Archive"}</>
                         )}
                       </button>
                     </>
@@ -2375,9 +2381,9 @@ function App() {
 
       <SimpleModal
         isOpen={deleteConfirmOpen}
-        title="Hapus Buku?"
-        message={`Apakah Anda yakin ingin menghapus buku "${bookToDelete?.title}" dan semua ringkasannya ? `}
-        confirmText="Hapus"
+        title="Purge Intel From Archive?"
+        message={`Are you sure you want to permanently delete "${bookToDelete?.title}" and all its intelligence artifacts?`}
+        confirmText="Confirm Purge"
         isDanger={true}
         onClose={() => setDeleteConfirmOpen(false)}
         onConfirm={confirmDeleteBook}

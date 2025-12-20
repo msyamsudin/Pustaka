@@ -567,7 +567,7 @@ Anda adalah SENIOR LITERARY CRITIC dan ACADEMIC EDITOR dengan spesialisasi:
 </role>
 
 <task>
-Evaluasi dan sintesis {len(drafts)} draf rangkuman untuk buku:
+Evaluasi dan sintesis {len(drafts)} draf intelligence brief untuk buku:
 📚 "{title}" 
 ✍️  {author}
 📅 {year or "Unknown"}
@@ -622,7 +622,7 @@ PROSES:
    - Optimalkan untuk readability
 
 OUTPUT:
-Hasilkan HANYA rangkuman final dalam format standar (9 bagian).
+Hasilkan HANYA brief final dalam format standar (9 bagian).
 JANGAN sertakan:
 - Scoring individual draf
 - Justifikasi pemilihan
@@ -658,7 +658,7 @@ Anda BUKAN content marketer atau copywriter populer.
 </role_definition>
 
 <task_objective>
-Transformasikan isi buku menjadi STRUCTURED KNOWLEDGE ARTIFACT dengan karakteristik:
+Transformasikan isi buku menjadi STRUCTURED KNOWLEDGE ARTIFACT (Analytical Brief) dengan karakteristik:
 ✓ High information density (Chain of Density approach)
 ✓ Technical precision (bukan simplifikasi berlebihan)
 ✓ Logical architecture (bukan narasi linear)
@@ -686,7 +686,7 @@ Ikuti EXACTLY 9 bagian berikut. Tidak boleh ditambah atau dikurangi:
 
 ---
 
-## 1. RINGKASAN INTI (Dense Executive Summary)
+## 1. EXECUTIVE ANALYTICAL BRIEF (Ringkasan Inti)
 SATU paragraf kohesif (150-200 kata) yang memuat:
 
 WAJIB ADA:
@@ -710,7 +710,7 @@ CONTOH BAIK:
 
 ---
 
-## 2. POIN KUNCI & ARGUMEN UTAMA
+## 2. CORE THESIS & KEY ARGUMENTS (Poin Kunci)
 
 4-6 bullet points. Setiap poin adalah ARGUMEN/TEMUAN, bukan topik.
 
@@ -731,7 +731,7 @@ KRITERIA KUALITAS:
 
 ---
 
-## 3. STRUKTUR & REKONSTRUKSI TOPIK
+## 3. CONCEPTUAL ARCHITECTURE (Struktur Topik)
 
 Rekonstruksi CONCEPTUAL ARCHITECTURE buku (bukan daftar chapter).
 
@@ -749,7 +749,7 @@ HINDARI:
 
 ---
 
-## 4. KONSEP & ISTILAH TEKNIKAL (Glossary of Density)
+## 4. GLOSSARY OF DENSITY (Konsep & Istilah Teknikal)
 
 5-8 istilah KEY yang UNIQUE atau CENTRAL ke buku ini.
 
@@ -766,7 +766,7 @@ SELEKSI ISTILAH:
 
 ---
 
-## 5. KERANGKA LOGIKA (The Blueprint)
+## 5. REASONING BLUEPRINT (Kerangka Logika)
 
 Struktur reasoning buku dalam 3 komponen:
 
@@ -786,7 +786,7 @@ TIPS:
 
 ---
 
-## 6. ACTIONABLE INSIGHTS / IMPLIKASI
+## 6. ACTIONABLE INTELLIGENCE & IMPLICATIONS
 
 MAKSIMAL 3 poin implikasi yang DAPAT DIOPERASIONALISASIKAN.
 
@@ -806,7 +806,7 @@ KRITERIA:
 
 ---
 
-## 7. KUTIPAN IKONIK
+## 7. REPRESENTATIVE SYNTHESIS (Kutipan Ikonik)
 
 SATU kutipan yang:
 - Merepresentasikan core message
@@ -827,7 +827,7 @@ JANGAN:
 
 ---
 
-## 8. TINGKAT ABSTRAKSI & KLASIFIKASI
+## 8. WORK CLASSIFICATION (Tingkat Abstraksi)
 
 **Jenis Karya**: [Pilih yang paling sesuai]
 - Teoretis-Konseptual (membangun framework baru)
@@ -849,7 +849,7 @@ Contoh: Akademisi (primer), praktisi berpengalaman (sekunder)
 
 ---
 
-## 9. TL;DR (Ultrapure Essence)
+## 9. ULTRAPURE ESSENCE (TL;DR)
 
 Distilasi MAKSIMAL 100 kata yang capture:
 - Core thesis (1 kalimat)
@@ -899,7 +899,7 @@ KOHESI:
 ═══════════════════════════════════════════════════════════════
 
 **SITUASI**: 
-Generasi rangkuman sebelumnya terputus di tengah jalan. Sistem telah menyimpan partial output.
+Generasi brief sebelumnya terputus di tengah jalan. Sistem telah menyimpan partial output.
 
 **KONTEN YANG SUDAH DITERIMA**:
 \"\"\"
