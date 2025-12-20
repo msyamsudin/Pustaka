@@ -1,10 +1,13 @@
 # 📚 Pustaka+
-Aplikasi yang berfungsi untuk merangkum sebuah buku menggunakan bantuan AI melalui OpenRouter atau Ollama. Untuk mencegah halusinasi AI, aplikasi akan memastikan bahwa buku yang akan dirangkum benar-benar ada (melalui Google Books & OpenLibrary).
+Aplikasi ini mensintesis beragam konsep kunci hingga nilai aplikatif menggunakan bantuan AI.
 
 ## ✨ Fitur Utama
-- **Verifikasi Ganda**: Mengecek metadata buku ke sumber tepercaya (Google Books & OpenLibrary).
-- **Rangkuman AI**: Menggunakan LLM (OpenRouter, Groq, atau Ollama) untuk merangkum buku yang terverifikasi.
-- **Provider**: **OpenRouter** (Cloud), **Groq** (Cloud), & **Ollama** (Lokal)
+- **Analytical Briefing Engine**: Menghasilkan analisis mendalam dengan struktur 9-bagian (Identitas, Sinopsis, Konsep Kunci, Analisis Kontekstual, hingga Applied Value), bukan sekadar ringkasan biasa.
+- **Deep Verification**: Memverifikasi keberadaan buku melalui Google Books & OpenLibrary untuk mencegah halusinasi AI.
+- **Multi-Draft Synthesis (Tournament Mode)**: Membuat beberapa draf ringkasan sekaligus dan mensintesis versi terbaiknya untuk akurasi maksimal.
+- **Smart Resume**: Kemampuan melanjutkan proses perangkuman yang terputus tanpa harus mengulang dari awal.
+- **Library Management**: Simpan, kelola, dan baca kembali hasil analisis buku Anda kapan saja dalam antarmuka *Saved Library* yang elegan.
+- **Multiple AI Providers**: Dukungan penuh untuk **OpenRouter** (Cloud), **Groq** (Ultra-fast Cloud), dan **Ollama** (Lokal/Offline Privacy).
 
 ## 🛠️ Prasyarat
 Pastikan kamu sudah menginstal:
