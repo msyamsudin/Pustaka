@@ -70,9 +70,9 @@ Aplikasi ini mendukung dua metode penggunaan AI:
 
 Konfigurasi disimpan secara otomatis di file `user_config.json`.
 
-## 📁 Struktur Proyek
+## Struktur Proyek
 - `/backend`: Logika server Python (FastAPI), Verifikasi, dan Summarizer.
 - `/frontend`: Antarmuka pengguna (React + Vite).
 
-## 📄 Lisensi
+## Lisensi
 [LICENSE](LICENSE)
