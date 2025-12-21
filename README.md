@@ -1,4 +1,4 @@
-# 📚 Pustaka+
+# Pustaka+
 Aplikasi yang berfungsi untuk mensintesis beragam konsep kunci hingga nilai aplikatif menggunakan bantuan AI.
 
 ## Fitur Utama
