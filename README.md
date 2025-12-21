@@ -3,11 +3,12 @@ Aplikasi yang berfungsi untuk mensintesis beragam konsep kunci hingga nilai apli
 
 ## ✨ Fitur Utama
 - **Analytical Briefing Engine**: Menghasilkan analisis mendalam dengan struktur 9-bagian (Identitas, Sinopsis, Konsep Kunci, Analisis Kontekstual, hingga Applied Value), bukan sekadar ringkasan biasa.
-- **Deep Verification**: Memverifikasi keberadaan buku melalui Google Books & OpenLibrary untuk mencegah halusinasi AI.
+- **Book Verification**: Memverifikasi keberadaan buku melalui Google Books & OpenLibrary untuk mencegah halusinasi AI.
 - **Multi-Draft Synthesis (Tournament Mode)**: Membuat beberapa draf ringkasan sekaligus dan mensintesis versi terbaiknya untuk akurasi maksimal.
 - **Smart Resume**: Kemampuan melanjutkan proses perangkuman yang terputus tanpa harus mengulang dari awal.
 - **Library Management**: Simpan, kelola, dan baca kembali hasil analisis buku Anda kapan saja dalam antarmuka *Saved Library* yang elegan.
-- **Multiple AI Providers**: Dukungan penuh untuk **OpenRouter** (Cloud), **Groq** (Ultra-fast Cloud), dan **Ollama** (Lokal/Offline Privacy).
+- **Multiple AI Providers**: Dukungan untuk **OpenRouter** (Cloud), **Groq** (Ultra-fast Cloud), dan **Ollama** (Lokal/Offline Privacy).
+- **Tanya AI**: Tanya AI tentang konsep kunci, analisis kontekstual, atau applied value dari hasil rangkuman. Kemudian simpan sebagai catatan.
 
 ## 🛠️ Prasyarat
 Pastikan kamu sudah menginstal:
