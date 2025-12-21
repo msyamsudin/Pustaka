@@ -1,7 +1,7 @@
 # 📚 Pustaka+
 Aplikasi yang berfungsi untuk mensintesis beragam konsep kunci hingga nilai aplikatif menggunakan bantuan AI.
 
-## ✨ Fitur Utama
+## Fitur Utama
 - **Analytical Briefing Engine**: Menghasilkan analisis mendalam dengan struktur 9-bagian (Identitas, Sinopsis, Konsep Kunci, Analisis Kontekstual, hingga Applied Value), bukan sekadar ringkasan biasa.
 - **Book Verification**: Memverifikasi keberadaan buku melalui Google Books & OpenLibrary untuk mencegah halusinasi AI.
 - **Analytical Refining Mode**: Menghasilkan 3 draf ringkasan awal secara paralel lalu melakukan tahap pemurnian (*refining*) untuk akurasi dan kepadatan informasi maksimal.
@@ -10,13 +10,12 @@ Aplikasi yang berfungsi untuk mensintesis beragam konsep kunci hingga nilai apli
 - **Multiple AI Providers**: Dukungan untuk **OpenRouter** (Cloud), **Groq** (Ultra-fast Cloud), dan **Ollama** (Lokal/Offline Privacy).
 - **Tanya AI**: Tanya AI tentang konsep kunci, analisis kontekstual, atau applied value dari hasil rangkuman. Kemudian simpan sebagai catatan.
 
-## 🛠️ Prasyarat
+## Instalasi
+
 Pastikan kamu sudah menginstal:
 - **Python 3.9+**
 - **Node.js**
 - **Ollama** (Hanya jika ingin menjalankan model AI secara lokal/offline)
-
-## 📦 Instalasi
 
 ### 1. Instalasi Backend
 Buka terminal di folder utama proyek:
@@ -32,7 +31,7 @@ npm install
 cd ..
 ```
 
-## 🚀 Cara Menjalankan Aplikasi
+## Cara Menjalankan Aplikasi
 
 ### Opsi 1: Otomatis (Termudah)
 Cukup klik dua kali file **`run_app.bat`** di folder utama.
@@ -55,7 +54,7 @@ npm run dev
 
 Buka browser di: **http://localhost:5173**
 
-## 🔑 Konfigurasi AI
+## Konfigurasi AI
 Aplikasi ini mendukung dua metode penggunaan AI:
 
 1. **Cloud (OpenRouter & Groq)**:
