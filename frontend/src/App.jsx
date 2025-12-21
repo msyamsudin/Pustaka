@@ -1216,7 +1216,7 @@ function App() {
                   draft_count: data.draft_count
                 });
                 if (data.is_enhanced) {
-                  showToast("Kualitas ditingkatkan via Tournament Mode", "success");
+                  showToast("Kualitas ditingkatkan via Refining Mode", "success");
                 }
               }
             } catch (e) {
@@ -2239,7 +2239,7 @@ function App() {
                           }}></div>
                         </div>
                         <span style={{ fontSize: '0.85rem', fontWeight: '500', color: highQuality ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                          Analytical Deep-Tier Mode (Best-of-N)
+                          Analytical Refining Mode
                         </span>
                         <Sparkles size={14} color={highQuality ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={highQuality ? 1 : 0.5} />
                       </div>
@@ -2264,7 +2264,7 @@ function App() {
 
                       {highQuality && !existingSummary && (
                         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
-                          * Mode ini menggunakan biaya token 4x-5x lebih banyak (3 draf + 1 hakim).
+                          * Mode ini menggunakan biaya token ~2x lebih banyak (1 draf + 1 refinement).
                         </p>
                       )}
                     </div>

@@ -486,7 +486,7 @@ class BookSummarizer:
         
         def generate_draft():
             return self.summarize(book_metadata)
-        
+        last_error = "Unknown error"
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(n, 5)) as executor:
             futures = [executor.submit(generate_draft) for _ in range(n)]
             
@@ -501,11 +501,14 @@ class BookSummarizer:
                             usage_total["total_tokens"] += res["usage"]["total_tokens"]
                         if "duration_seconds" in res:
                             durations.append(res["duration_seconds"])
-                except Exception:
+                    elif "error" in res:
+                        last_error = res["error"]
+                except Exception as e:
+                    last_error = str(e)
                     continue
 
         if not drafts:
-            return {"error": "Failed to generate any drafts"}
+            return {"error": f"Failed to generate any drafts. Cause: {last_error}"}
 
         # Judge stage
         try:
