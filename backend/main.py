@@ -121,6 +121,16 @@ class SynthesisRequest(BaseModel):
     model: Optional[str] = None
     provider: Optional[str] = "OpenRouter"
 
+class ElaborationRequest(BaseModel):
+    selection: str
+    query: Optional[str] = ""
+    context: Optional[str] = ""
+    history: Optional[List[Dict[str, str]]] = []
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    provider: Optional[str] = "OpenRouter"
+    base_url: Optional[str] = None
+
 
 @app.post("/api/summarize")
 def summarize_book(req: SummarizationRequest):
@@ -201,6 +211,30 @@ def synthesize_summaries(req: SynthesisRequest):
         yield f"data: {json.dumps({'done': True, 'source_models': source_models, **{k:v for k,v in result.items() if k != 'content'}})}\n\n"
             
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/elaborate")
+def elaborate_text(req: ElaborationRequest):
+    # Determine API Key & Provider from request or config
+    config = config_manager.load_config()
+    
+    provider = req.provider or config.get("provider", "OpenRouter")
+    api_key = req.api_key or (config.get("openrouter_key") if provider == "OpenRouter" else config.get("groq_key"))
+    model = req.model or (config.get("openrouter_model") if provider == "OpenRouter" else config.get("groq_model"))
+    base_url = req.base_url or config.get("ollama_base_url")
+
+    # If Ollama, model might be different
+    if provider == "Ollama":
+        model = req.model or config.get("ollama_model", "llama3")
+
+    summarizer = BookSummarizer(
+        api_key=api_key, 
+        model_name=model, 
+        provider=provider, 
+        base_url=base_url
+    )
+    
+    return summarizer.elaborate(req.selection, req.query, req.context, req.history)
 
 
 @app.post("/api/models")
@@ -288,6 +322,31 @@ def save_summary(req: SaveSummaryRequest):
 @app.delete("/api/saved/{summary_id}")
 def delete_summary(summary_id: str):
     success = storage_manager.delete_summary(summary_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Summary not found")
+    return {"status": "success", "id": summary_id}
+
+class ContentUpdateRequest(BaseModel):
+    summary_content: str
+
+class NoteCreateRequest(BaseModel):
+    ref_text: str
+    content_markdown: str
+
+@app.post("/api/saved/{summary_id}/notes")
+def add_summary_note(summary_id: str, request: NoteCreateRequest):
+    note_data = {
+        "ref_text": request.ref_text,
+        "content_markdown": request.content_markdown
+    }
+    result = storage_manager.add_note_to_summary(summary_id, note_data)
+    if not result:
+        raise HTTPException(status_code=404, detail="Summary not found")
+    return result
+
+@app.put("/api/saved/{summary_id}/content")
+def update_summary_content(summary_id: str, request: ContentUpdateRequest):
+    success = storage_manager.update_summary_content(summary_id, request.summary_content)
     if not success:
         raise HTTPException(status_code=404, detail="Summary not found")
     return {"status": "success", "id": summary_id}

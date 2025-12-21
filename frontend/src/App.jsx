@@ -2,7 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag } from 'lucide-react';
+import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus } from 'lucide-react';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
+import showdown from 'showdown';
+import TurndownService from 'turndown';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
 
@@ -428,6 +432,238 @@ function App() {
   const [coverEditBook, setCoverEditBook] = useState(null);
   const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
 
+  // Elaboration State
+  const [selectionContext, setSelectionContext] = useState(null);
+  const [elaborationChat, setElaborationChat] = useState([]); // Array of {role: 'user'|'ai', content: string}
+  const [isElaborating, setIsElaborating] = useState(false);
+  const [elaborationQuery, setElaborationQuery] = useState("");
+  const [showElaborationPanel, setShowElaborationPanel] = useState(false);
+
+  // Note Review State
+  const [isNoteReviewOpen, setIsNoteReviewOpen] = useState(false);
+  const [noteReviewContent, setNoteReviewContent] = useState("");
+  const [notes, setNotes] = useState([]); // Dedicated notes state
+  const noteReviewTextareaRef = useRef(null);
+
+  // Initialize Converters
+  const mdConverter = new showdown.Converter();
+  const htmlConverter = new TurndownService({
+    headingStyle: 'atx',
+    hr: '---',
+    bulletListMarker: '-',
+    codeBlockStyle: 'fenced',
+    emDelimiter: '*'
+  });
+
+  // Custom turndown rule to trim excessive newlines from paragraphs
+  htmlConverter.addRule('trimParagraphs', {
+    filter: 'p',
+    replacement: function (content) {
+      return '\n\n' + content.trim() + '\n\n';
+    }
+  });
+
+  // Editor Toolbar Handler
+  const handleFormat = (command) => {
+    const textarea = noteReviewTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = noteReviewContent;
+    const before = text.substring(0, start);
+    const selection = text.substring(start, end);
+    const after = text.substring(end);
+
+    let newText = text;
+    let newCursorPos = end;
+
+    switch (command) {
+      case 'bold':
+        newText = `${before}**${selection}**${after}`;
+        newCursorPos = end + 4;
+        break;
+      case 'italic':
+        newText = `${before}*${selection}*${after}`;
+        newCursorPos = end + 2;
+        break;
+      case 'h2':
+        newText = `${before}\n## ${selection}${after}`;
+        newCursorPos = end + 4;
+        break;
+      case 'quote':
+        newText = `${before}\n> ${selection}${after}`;
+        newCursorPos = end + 3;
+        break;
+      case 'list':
+        newText = `${before}\n- ${selection}${after}`;
+        newCursorPos = end + 3;
+        break;
+      case 'code':
+        newText = `${before}\`${selection}\`${after}`;
+        newCursorPos = end + 2;
+        break;
+      case 'hr':
+        newText = `${before}\n\n---\n\n${after}`;
+        newCursorPos = start + 5;
+        break;
+      default:
+        return;
+    }
+
+    setNoteReviewContent(newText);
+
+    // Defer focus restoration
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newCursorPos, newCursorPos);
+    }, 0);
+  };
+
+  // Selection Handler
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.toString().trim() === '') {
+        // Only clear if we are NOT interacting with the elaboration panel
+        if (!showElaborationPanel) {
+          setSelectionContext(null);
+        }
+        return;
+      }
+
+      // Check if selection is within markdown content
+      const markdownEl = document.querySelector('.markdown-content');
+      if (markdownEl && markdownEl.contains(selection.anchorNode)) {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        setSelectionContext({
+          text: selection.toString(),
+          rect: {
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height
+          }
+        });
+      }
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [showElaborationPanel]);
+
+  const handleElaborate = async () => {
+    if (!selectionContext) return;
+
+    const currentQuery = elaborationQuery.trim();
+    // Optimistic update
+    const newHistory = [...elaborationChat];
+    if (currentQuery) {
+      newHistory.push({ role: 'user', content: currentQuery });
+    } else if (newHistory.length === 0) {
+      // Initial auto-query if empty
+      newHistory.push({ role: 'user', content: "Jelaskan ini." });
+    }
+
+    setElaborationChat(newHistory);
+    setElaborationQuery(""); // Clear input
+    setIsElaborating(true);
+
+    try {
+      const res = await axios.post(`${API_BASE_URL}/elaborate`, {
+        selection: selectionContext.text,
+        query: currentQuery,
+        context: summary,
+        history: newHistory.map(msg => ({ role: msg.role, content: msg.content })),
+        api_key: provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : null),
+        provider: provider,
+        model: provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel),
+        base_url: ollamaBaseUrl
+      });
+
+      if (res.data.error) {
+        showAlert("Error", res.data.error);
+      } else {
+        setElaborationChat(prev => [...prev, { role: 'ai', content: res.data.content }]);
+      }
+    } catch (err) {
+      console.error("Elaboration failed", err);
+      showAlert("Error", "Gagal melakukan elaborasi.");
+    } finally {
+      setIsElaborating(false);
+    }
+  };
+
+  const handleInitiateSave = () => {
+    if (elaborationChat.length === 0) return;
+
+    let chatLog = "";
+    elaborationChat.forEach(msg => {
+      const icon = msg.role === 'ai' ? "🤖 PustakaAI" : "👤 User";
+      chatLog += `**${icon}:** ${msg.content.trim()}\n\n`;
+    });
+
+    const noteEntry = `### 💡 Diskusi Elaborasi\n*Ref: "${selectionContext.text.substring(0, 80)}..."*\n\n${chatLog.trim()}`;
+
+    // Convert Markdown to HTML for WYSIWYG Editor
+    const htmlContent = mdConverter.makeHtml(noteEntry);
+    setNoteReviewContent(htmlContent);
+    setIsNoteReviewOpen(true);
+  };
+
+  const handleFinalizeSave = async () => {
+    // Convert HTML back to Markdown
+    const markdownContent = htmlConverter.turndown(noteReviewContent).trim();
+
+    // Persistent storage integration (New Architecture: Dedicated Notes)
+    if (savedId) {
+      try {
+        const res = await axios.post(`${API_BASE_URL}/saved/${savedId}/notes`, {
+          ref_text: selectionContext.text,
+          content_markdown: markdownContent
+        });
+
+        const newNote = res.data;
+        setNotes(prev => [...prev, newNote]);
+
+        // Also update the local savedSummaries list to stay in sync
+        setSavedSummaries(prev => prev.map(book => {
+          if (book.summaries.some(s => s.id === savedId)) {
+            return {
+              ...book,
+              summaries: book.summaries.map(s =>
+                s.id === savedId ? { ...s, notes: [...(s.notes || []), newNote], timestamp: new Date().toISOString() } : s
+              ),
+              last_updated: new Date().toISOString()
+            };
+          }
+          return book;
+        }));
+        showToast("Diskusi berhasil diarsipkan ke Lampiran", "success");
+      } catch (err) {
+        console.error("Failed to save note", err);
+        showToast("Gagal mengarsipkan diskusi ke backend", "error");
+      }
+    } else {
+      // Fallback: If not saved, we can still append to local summary for now 
+      // or show a warning. Let's append to local summary as a fallback.
+      const newSummary = (summary || "").trim() + "\n\n---\n\n" + markdownContent;
+      setSummary(newSummary);
+      showToast("Diskusi ditambahkan ke ringkuman (Belum diarsipkan)", "info");
+    }
+
+    setIsNoteReviewOpen(false);
+    setNoteReviewContent("");
+
+    // Cleanup Elaboration
+    setShowElaborationPanel(false);
+    setElaborationChat([]);
+    setElaborationQuery("");
+    setSelectionContext(null);
+    window.getSelection().removeAllRanges();
+  };
+
   const showAlert = (title, message) => {
     setAlertModal({ isOpen: true, title, message });
   };
@@ -721,6 +957,7 @@ function App() {
     setSummary(variant.summary_content);
     setUsageStats(variant.usage_stats);
     setSavedId(variant.id);
+    setNotes(variant.notes || []); // Load associated notes
   };
 
   const validateApiKey = async (key, shouldSave = true, targetProvider = provider, baseUrl = ollamaBaseUrl) => {
@@ -863,6 +1100,7 @@ function App() {
       setSummary(null);
       setUsageStats(null);
       setSavedId(null);
+      setNotes([]); // Reset notes for new summary
       setCurrentVariant(null);
       setTokensReceived(0);
     }
@@ -978,6 +1216,7 @@ function App() {
     setSummary(null);
     setUsageStats(null);
     setSavedId(null);
+    setNotes([]); // Reset notes for synthesis
     setCurrentVariant(null);
     setTokensReceived(0);
 
@@ -1164,6 +1403,7 @@ function App() {
     setSummary(null);
     setUsageStats(null);
     setSavedId(null);
+    setNotes([]); // Clear notes on reset
     setError(null);
     setCurrentBook(null);
     setCurrentVariant(null);
@@ -2371,6 +2611,80 @@ function App() {
                 </div>
               </div>
             )}
+
+            {/* New Appendix Section for Notes */}
+            {notes && notes.length > 0 && (
+              <div className="notes-appendix" style={{
+                marginTop: '3rem',
+                paddingTop: '2rem',
+                borderTop: '1px solid var(--border-color)',
+                width: '100%',
+                overflow: 'hidden'
+              }}>
+                <h3 style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  marginBottom: '2rem',
+                  color: 'var(--accent-color)',
+                  fontSize: '1.2rem',
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase'
+                }}>
+                  <PenTool size={20} />
+                  Lampiran: Diskusi & Elaborasi
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
+                  {notes.map((note, idx) => (
+                    <div key={note.id || idx} className="glass-card note-card" style={{
+                      padding: '1.5rem',
+                      background: 'rgba(255,255,255,0.02)',
+                      borderLeft: '3px solid var(--accent-color)',
+                      borderRadius: '0 8px 8px 0',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      overflow: 'hidden',
+                      wordBreak: 'break-word'
+                    }}>
+                      <div style={{
+                        fontSize: '0.75rem',
+                        color: 'var(--text-secondary)',
+                        marginBottom: '1rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: '1rem',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                        paddingBottom: '0.5rem'
+                      }}>
+                        <span style={{
+                          fontStyle: 'italic',
+                          flex: 1,
+                          wordBreak: 'break-word',
+                          overflowWrap: 'anywhere'
+                        }}>
+                          Ref: "{note.ref_text}"
+                        </span>
+                        <span style={{ opacity: 0.6, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                          {new Date(note.timestamp).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                      </div>
+                      <div className="markdown-content notes-markdown" style={{
+                        fontSize: '0.95rem',
+                        lineHeight: '1.6',
+                        maxWidth: '100%',
+                        overflowX: 'auto',
+                        paddingBottom: '4px'
+                      }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {note.content_markdown}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2428,6 +2742,242 @@ function App() {
         isSaving={isSavingMetadata}
       />
 
+
+      {/* Floating Elaboration Trigger */}
+      {
+        selectionContext && !showElaborationPanel && (
+          <div style={{
+            position: 'fixed',
+            top: `${selectionContext.rect.top - 50}px`,
+            left: `${selectionContext.rect.left}px`,
+            zIndex: 1000,
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            <button
+              className="btn-primary"
+              onClick={() => setShowElaborationPanel(true)}
+              style={{
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                padding: '0.4rem 0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.9rem'
+              }}
+            >
+              <Sparkles size={16} /> Tanya AI
+            </button>
+          </div>
+        )
+      }
+
+      {/* Elaboration Panel */}
+      {
+        showElaborationPanel && selectionContext && (
+          <div className="glass-card animate-scale-up" style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            width: '450px',
+            height: '600px',
+            maxHeight: '80vh',
+            zIndex: 1100,
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
+            border: '1px solid var(--accent-color)'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+              <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                <Sparkles size={16} color="var(--accent-color)" /> Tanya {(provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)).split('/').pop()}
+              </h4>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                {elaborationChat.length > 0 && (
+                  <button
+                    onClick={handleInitiateSave}
+                    className="btn-primary"
+                    title="Simpan Percakapan ke Catatan"
+                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+                  >
+                    <Save size={14} /> Simpan
+                  </button>
+                )}
+                <button onClick={() => setShowElaborationPanel(false)} className="icon-btn"><X size={18} /></button>
+              </div>
+            </div>
+
+            {/* Context Quote */}
+            <div style={{
+              background: 'rgba(255,255,255,0.05)',
+              padding: '0.75rem',
+              borderRadius: '6px',
+              fontSize: '0.8rem',
+              fontStyle: 'italic',
+              marginBottom: '0.5rem',
+              borderLeft: '3px solid var(--accent-color)',
+              maxHeight: '80px',
+              overflowY: 'auto',
+              flexShrink: 0
+            }} className="custom-scrollbar">
+              "{selectionContext.text}"
+            </div>
+
+            {/* Chat History */}
+            <div style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', paddingRight: '0.5rem' }} className="custom-scrollbar">
+              {elaborationChat.length === 0 ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '2rem', fontSize: '0.9rem', fontStyle: 'italic' }}>
+                  Tanyakan sesuatu tentang teks yang Anda pilih atau klik tombol kirim untuk penjelasan umum.
+                </div>
+              ) : (
+                elaborationChat.map((msg, idx) => (
+                  <div key={idx} style={{
+                    alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                    background: msg.role === 'user' ? 'rgba(var(--accent-rgb), 0.2)' : 'rgba(255,255,255,0.03)',
+                    border: msg.role === 'user' ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                    maxWidth: '85%',
+                    fontSize: '0.9rem',
+                    lineHeight: '1.5'
+                  }}>
+                    {msg.role === 'ai' ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    ) : msg.content}
+                  </div>
+                ))
+              )}
+              {isElaborating && (
+                <div style={{ alignSelf: 'flex-start', background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.9rem' }}>
+                  <span className="spinner" style={{ width: '12px', height: '12px', display: 'inline-block' }}></span> Mengetik...
+                </div>
+              )}
+            </div>
+
+            {/* Input Area */}
+            <div style={{ flexShrink: 0, marginTop: 'auto', display: 'flex', gap: '0.5rem' }}>
+              <textarea
+                className="input-field"
+                rows={2}
+                placeholder="Tulis pertanyaan lanjutan..."
+                value={elaborationQuery}
+                onChange={(e) => setElaborationQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleElaborate();
+                  }
+                }}
+                style={{ marginBottom: 0, resize: 'none', fontSize: '0.9rem' }}
+              />
+              <button
+                onClick={handleElaborate}
+                className="btn-primary"
+                disabled={isElaborating}
+                style={{ minWidth: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                {isElaborating ? <span className="spinner"></span> : <Sparkles size={20} />}
+              </button>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Note Review Modal */}
+      {
+        isNoteReviewOpen && (
+          <div className="modal-overlay animate-fade-in">
+            <div className="glass-card animate-scale-up" style={{ padding: '2rem', maxWidth: '600px', width: '90%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+              <h3 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Edit3 size={20} color="var(--accent-color)" /> Review Catatan
+              </h3>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                Silakan periksa dan edit catatan elaborasi sebelum disimpan ke rangkuman utama.
+              </p>
+
+              {/* Quill Styles for Dark Mode */}
+              <style>{`
+                .quill {
+                    display: flex;
+                    flex-direction: column;
+                    height: 100%;
+                    overflow: hidden;
+                }
+                .ql-toolbar.ql-snow {
+                    border: 1px solid var(--border-color) !important;
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 8px 8px 0 0;
+                    flex-shrink: 0;
+                }
+                .ql-container.ql-snow {
+                    border: 1px solid var(--border-color) !important;
+                    background: rgba(0, 0, 0, 0.2);
+                    border-radius: 0 0 8px 8px;
+                    color: var(--text-primary);
+                    font-size: 0.9rem;
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    overflow: hidden;
+                }
+                .ql-editor {
+                    flex: 1;
+                    overflow-y: auto;
+                    white-space: pre-wrap !important;
+                    word-break: break-word !important;
+                    overflow-wrap: break-word !important;
+                }
+                .ql-stroke {
+                    stroke: var(--text-secondary) !important;
+                }
+                .ql-fill {
+                    fill: var(--text-secondary) !important;
+                }
+                .ql-picker {
+                    color: var(--text-secondary) !important;
+                }
+                .ql-picker-options {
+                    background-color: var(--bg-card) !important;
+                    border-color: var(--border-color) !important;
+                }
+            `}</style>
+
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '300px' }}>
+                <ReactQuill
+                  theme="snow"
+                  value={noteReviewContent}
+                  onChange={setNoteReviewContent}
+                  modules={{
+                    toolbar: [
+                      ['bold', 'italic', 'underline', 'strike'],
+                      ['blockquote', 'code-block'],
+                      [{ 'header': 1 }, { 'header': 2 }],
+                      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                      [{ 'script': 'sub' }, { 'script': 'super' }],
+                      ['clean']
+                    ]
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
+                <button
+                  onClick={() => setIsNoteReviewOpen(false)}
+                  className="btn-secondary"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleFinalizeSave}
+                  className="btn-primary"
+                >
+                  <Check size={16} style={{ marginRight: '6px' }} /> Simpan ke Rangkuman
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       {
         toast && (

@@ -70,6 +70,7 @@ class StorageManager:
             variant = {
                 "id": item['id'],
                 "summary_content": item.get('summary_content', ''),
+                "notes": item.get('notes', []), # Support notes field
                 "usage_stats": item.get('usage_stats', {}),
                 "metadata": item.get('metadata', {}),
                 "timestamp": item.get('timestamp'),
@@ -152,6 +153,7 @@ class StorageManager:
         new_variant = {
             "id": variant_id,
             "summary_content": summary_data['summary_content'],
+            "notes": [], # Initialize empty notes
             "usage_stats": summary_data.get('usage_stats', {}),
             "metadata": summary_data.get('metadata', {}),
             "timestamp": timestamp,
@@ -273,3 +275,49 @@ class StorageManager:
             self._save_data(data)
             return True
         return False
+    def update_summary_content(self, summary_id: str, new_content: str) -> bool:
+        """Updates the content of a specific summary variant."""
+        data = self._load_data()
+        found = False
+        
+        for book in data:
+            for variant in book['summaries']:
+                if variant['id'] == summary_id:
+                    variant['summary_content'] = new_content
+                    variant['timestamp'] = datetime.now().isoformat() # Update variant timestamp
+                    book['last_updated'] = datetime.now().isoformat() # Update book timestamp
+                    found = True
+                    break
+            if found:
+                break
+        
+    def add_note_to_summary(self, summary_id: str, note_data: Dict) -> Optional[Dict]:
+        """Appends a note to a specific summary variant."""
+        data = self._load_data()
+        found_variant = None
+        
+        for book in data:
+            for variant in book['summaries']:
+                if variant['id'] == summary_id:
+                    if 'notes' not in variant:
+                        variant['notes'] = []
+                    
+                    # Ensure note has an ID and timestamp
+                    if 'id' not in note_data:
+                        note_data['id'] = str(uuid.uuid4())
+                    if 'timestamp' not in note_data:
+                        note_data['timestamp'] = datetime.now().isoformat()
+                        
+                    variant['notes'].append(note_data)
+                    book['last_updated'] = datetime.now().isoformat()
+                    found_variant = variant
+                    break
+            if found_variant:
+                break
+        
+        if found_variant:
+            data.sort(key=lambda x: x['last_updated'], reverse=True)
+            self._save_data(data)
+            return note_data
+            
+        return None

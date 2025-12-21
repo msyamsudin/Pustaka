@@ -640,6 +640,93 @@ class BookSummarizer:
         except Exception as e:
             return {"error": f"Failed to synthesize summaries: {str(e)}"}
 
+    def elaborate(self, selection: str, query: str, full_context: str = "", history: List[Dict[str, str]] = None) -> Dict:
+        """Elaborate on a selected text based on user query"""
+        if not selection:
+            return {"error": "No text selected"}
+
+        # Sanitize
+        selection = self._sanitize_input(selection, 1000)
+        query = self._sanitize_input(query, 500)
+        full_context = self._sanitize_input(full_context, 5000) if full_context else ""
+        
+        # Format history
+        history_text = ""
+        if history:
+            history_lines = []
+            for msg in history:
+                role = "User" if msg.get("role") == "user" else "AI"
+                content = self._sanitize_input(msg.get("content", ""), 1000)
+                history_lines.append(f"{role}: {content}")
+            history_text = "\n".join(history_lines)
+
+        prompt = f"""<role>
+You are a SUBJECT MATTER EXPERT and ACADEMIC TUTOR.
+</role>
+
+<context>
+The user is reading a summary and has highlighted a specific passage.
+CONTEXT (Excerpts):
+...{full_context}...
+</context>
+
+<selection>
+"{selection}"
+</selection>
+
+{f'<conversation_history>{history_text}</conversation_history>' if history_text else ''}
+
+<query>
+User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berikan konteks tambahan.'}"
+</query>
+
+<instructions>
+1. Directly answer the user's question regarding the selected text.
+2. If previous conversation exists, maintain context.
+3. If the user didn't ask a specific question, provide a comprehensive elaboration:
+   - Define key terms/jargon used in the selection.
+   - explain the implications or "why this matters".
+   - Provide a concrete example if abstract.
+4. Keep the tone analytical yet accessible (University level).
+5. Output in Indonesian.
+</instructions>"""
+
+        try:
+            start_time = time.time()
+            
+            if self.provider == "Ollama":
+                return self._summarize_ollama(prompt, start_time)
+            
+            if not self.client:
+                return {"error": "AI client not initialized"}
+            
+            with self._client_lock:
+                completion = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+            
+            end_time = time.time()
+            duration = round(end_time - start_time, 2)
+            
+            usage = completion.usage
+            content = completion.choices[0].message.content
+            
+            return {
+                "content": self._clean_output(content),
+                "usage": {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens
+                },
+                "model": self.model_name,
+                "provider": self.provider,
+                "cost_estimate": self._calculate_cost(usage.prompt_tokens, usage.completion_tokens),
+                "duration_seconds": duration
+            }
+        except Exception as e:
+            return {"error": f"Elaboration failed: {str(e)}"}
+
 
     def _get_full_prompt(
         self, 
