@@ -333,6 +333,9 @@ class NoteCreateRequest(BaseModel):
     ref_text: str
     content_markdown: str
 
+class NoteUpdateRequest(BaseModel):
+    content_markdown: str
+
 @app.post("/api/saved/{summary_id}/notes")
 def add_summary_note(summary_id: str, request: NoteCreateRequest):
     note_data = {
@@ -343,6 +346,23 @@ def add_summary_note(summary_id: str, request: NoteCreateRequest):
     if not result:
         raise HTTPException(status_code=404, detail="Summary not found")
     return result
+
+@app.put("/api/saved/{summary_id}/notes/{note_id}")
+def update_summary_note(summary_id: str, note_id: str, request: NoteUpdateRequest):
+    note_data = {
+        "content_markdown": request.content_markdown
+    }
+    result = storage_manager.update_note_in_summary(summary_id, note_id, note_data)
+    if not result:
+        raise HTTPException(status_code=404, detail="Summary or Note not found")
+    return result
+
+@app.delete("/api/saved/{summary_id}/notes/{note_id}")
+def delete_summary_note(summary_id: str, note_id: str):
+    success = storage_manager.delete_note_from_summary(summary_id, note_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Summary or Note not found")
+    return {"status": "success", "id": note_id}
 
 @app.put("/api/saved/{summary_id}/content")
 def update_summary_content(summary_id: str, request: ContentUpdateRequest):

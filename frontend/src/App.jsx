@@ -3,10 +3,6 @@ import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus } from 'lucide-react';
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
-import showdown from 'showdown';
-import TurndownService from 'turndown';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
 
@@ -443,25 +439,8 @@ function App() {
   const [isNoteReviewOpen, setIsNoteReviewOpen] = useState(false);
   const [noteReviewContent, setNoteReviewContent] = useState("");
   const [notes, setNotes] = useState([]); // Dedicated notes state
+  const [editingNoteId, setEditingNoteId] = useState(null); // Track note being edited
   const noteReviewTextareaRef = useRef(null);
-
-  // Initialize Converters
-  const mdConverter = new showdown.Converter();
-  const htmlConverter = new TurndownService({
-    headingStyle: 'atx',
-    hr: '---',
-    bulletListMarker: '-',
-    codeBlockStyle: 'fenced',
-    emDelimiter: '*'
-  });
-
-  // Custom turndown rule to trim excessive newlines from paragraphs
-  htmlConverter.addRule('trimParagraphs', {
-    filter: 'p',
-    replacement: function (content) {
-      return '\n\n' + content.trim() + '\n\n';
-    }
-  });
 
   // Editor Toolbar Handler
   const handleFormat = (command) => {
@@ -606,26 +585,76 @@ function App() {
 
     const noteEntry = `### 💡 Diskusi Elaborasi\n*Ref: "${selectionContext.text.substring(0, 80)}..."*\n\n${chatLog.trim()}`;
 
-    // Convert Markdown to HTML for WYSIWYG Editor
-    const htmlContent = mdConverter.makeHtml(noteEntry);
-    setNoteReviewContent(htmlContent);
+    setNoteReviewContent(noteEntry);
+    setEditingNoteId(null);
     setIsNoteReviewOpen(true);
+  };
+
+  const handleEditNote = (note) => {
+    setNoteReviewContent(note.content_markdown);
+    setEditingNoteId(note.id);
+    setIsNoteReviewOpen(true);
+  };
+
+  const handleDeleteNote = (noteId) => {
+    showConfirm(
+      "Hapus Catatan?",
+      "Apakah Anda yakin ingin menghapus catatan ini secara permanen?",
+      async () => {
+        try {
+          await axios.delete(`${API_BASE_URL}/saved/${savedId}/notes/${noteId}`);
+          setNotes(prev => prev.filter(n => n.id !== noteId));
+          // Update local library state
+          setSavedSummaries(prev => prev.map(book => {
+            if (book.summaries.some(s => s.id === savedId)) {
+              return {
+                ...book,
+                summaries: book.summaries.map(s =>
+                  s.id === savedId ? {
+                    ...s,
+                    notes: s.notes.filter(n => n.id !== noteId),
+                    timestamp: new Date().toISOString()
+                  } : s
+                ),
+                last_updated: new Date().toISOString()
+              };
+            }
+            return book;
+          }));
+          showToast("Catatan dihapus", "success");
+        } catch (err) {
+          console.error("Failed to delete note", err);
+          showToast("Gagal menghapus catatan", "error");
+        }
+      },
+      true // isDanger
+    );
   };
 
   const handleFinalizeSave = async () => {
     // Convert HTML back to Markdown
-    const markdownContent = htmlConverter.turndown(noteReviewContent).trim();
+    const markdownContent = noteReviewContent.trim();
 
     // Persistent storage integration (New Architecture: Dedicated Notes)
     if (savedId) {
       try {
-        const res = await axios.post(`${API_BASE_URL}/saved/${savedId}/notes`, {
-          ref_text: selectionContext.text,
-          content_markdown: markdownContent
-        });
-
-        const newNote = res.data;
-        setNotes(prev => [...prev, newNote]);
+        let newNote;
+        if (editingNoteId) {
+          // Update existing note
+          const res = await axios.put(`${API_BASE_URL}/saved/${savedId}/notes/${editingNoteId}`, {
+            content_markdown: markdownContent
+          });
+          newNote = res.data;
+          setNotes(prev => prev.map(n => n.id === editingNoteId ? newNote : n));
+        } else {
+          // Create new note
+          const res = await axios.post(`${API_BASE_URL}/saved/${savedId}/notes`, {
+            ref_text: selectionContext?.text || "Manual Note",
+            content_markdown: markdownContent
+          });
+          newNote = res.data;
+          setNotes(prev => [...prev, newNote]);
+        }
 
         // Also update the local savedSummaries list to stay in sync
         setSavedSummaries(prev => prev.map(book => {
@@ -633,17 +662,23 @@ function App() {
             return {
               ...book,
               summaries: book.summaries.map(s =>
-                s.id === savedId ? { ...s, notes: [...(s.notes || []), newNote], timestamp: new Date().toISOString() } : s
+                s.id === savedId ? {
+                  ...s,
+                  notes: editingNoteId
+                    ? s.notes.map(n => n.id === editingNoteId ? newNote : n)
+                    : [...(s.notes || []), newNote],
+                  timestamp: new Date().toISOString()
+                } : s
               ),
               last_updated: new Date().toISOString()
             };
           }
           return book;
         }));
-        showToast("Diskusi berhasil diarsipkan ke Lampiran", "success");
+        showToast(editingNoteId ? "Catatan diperbarui" : "Diskusi berhasil diarsipkan ke Lampiran", "success");
       } catch (err) {
         console.error("Failed to save note", err);
-        showToast("Gagal mengarsipkan diskusi ke backend", "error");
+        showToast("Gagal menyimpan catatan ke backend", "error");
       }
     } else {
       // Fallback: If not saved, we can still append to local summary for now 
@@ -655,13 +690,14 @@ function App() {
 
     setIsNoteReviewOpen(false);
     setNoteReviewContent("");
+    setEditingNoteId(null);
 
     // Cleanup Elaboration
     setShowElaborationPanel(false);
     setElaborationChat([]);
     setElaborationQuery("");
     setSelectionContext(null);
-    window.getSelection().removeAllRanges();
+    window.getSelection()?.removeAllRanges();
   };
 
   const showAlert = (title, message) => {
@@ -2680,6 +2716,48 @@ function App() {
                           {note.content_markdown}
                         </ReactMarkdown>
                       </div>
+
+                      <div style={{
+                        marginTop: '1rem',
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        borderTop: '1px solid rgba(255,255,255,0.03)',
+                        paddingTop: '0.75rem'
+                      }}>
+                        <button
+                          onClick={() => handleEditNote(note)}
+                          className="btn-secondary"
+                          style={{
+                            padding: '0.3rem 0.6rem',
+                            fontSize: '0.7rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            minWidth: 'auto',
+                            opacity: 0.8
+                          }}
+                        >
+                          <Edit3 size={12} /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteNote(note.id)}
+                          className="btn-danger"
+                          style={{
+                            padding: '0.3rem 0.6rem',
+                            fontSize: '0.7rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            minWidth: 'auto',
+                            opacity: 0.8,
+                            color: 'white',
+                            border: 'none',
+                            background: 'rgba(239, 68, 68, 0.1)'
+                          }}
+                        >
+                          <Trash2 size={12} /> Hapus
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2887,76 +2965,43 @@ function App() {
       {
         isNoteReviewOpen && (
           <div className="modal-overlay animate-fade-in">
-            <div className="glass-card animate-scale-up" style={{ padding: '2rem', maxWidth: '600px', width: '90%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-              <h3 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Edit3 size={20} color="var(--accent-color)" /> Review Catatan
-              </h3>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                Silakan periksa dan edit catatan elaborasi sebelum disimpan ke rangkuman utama.
+            <div className="glass-card animate-scale-up" style={{ padding: '2rem', maxWidth: '700px', width: '90%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Edit3 size={20} color="var(--accent-color)" /> {editingNoteId ? "Edit Catatan" : "Review Catatan (Markdown)"}
+                </h3>
+                <div className="editor-toolbar" style={{ display: 'flex', gap: '0.25rem' }}>
+                  <button onClick={() => handleFormat('bold')} className="icon-btn" title="Bold"><Bold size={16} /></button>
+                  <button onClick={() => handleFormat('italic')} className="icon-btn" title="Italic"><Italic size={16} /></button>
+                  <button onClick={() => handleFormat('h2')} className="icon-btn" title="Heading"><Heading size={16} /></button>
+                  <button onClick={() => handleFormat('quote')} className="icon-btn" title="Quote"><Quote size={16} /></button>
+                  <button onClick={() => handleFormat('list')} className="icon-btn" title="List"><List size={16} /></button>
+                  <button onClick={() => handleFormat('code')} className="icon-btn" title="Code"><Code size={16} /></button>
+                  <button onClick={() => handleFormat('hr')} className="icon-btn" title="Separator"><Minus size={16} /></button>
+                </div>
+              </div>
+
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                Gunakan format Markdown untuk mengatur struktur catatan Anda.
               </p>
 
-              {/* Quill Styles for Dark Mode */}
-              <style>{`
-                .quill {
-                    display: flex;
-                    flex-direction: column;
-                    height: 100%;
-                    overflow: hidden;
-                }
-                .ql-toolbar.ql-snow {
-                    border: 1px solid var(--border-color) !important;
-                    background: rgba(255, 255, 255, 0.05);
-                    border-radius: 8px 8px 0 0;
-                    flex-shrink: 0;
-                }
-                .ql-container.ql-snow {
-                    border: 1px solid var(--border-color) !important;
-                    background: rgba(0, 0, 0, 0.2);
-                    border-radius: 0 0 8px 8px;
-                    color: var(--text-primary);
-                    font-size: 0.9rem;
-                    flex: 1;
-                    display: flex;
-                    flex-direction: column;
-                    overflow: hidden;
-                }
-                .ql-editor {
-                    flex: 1;
-                    overflow-y: auto;
-                    white-space: pre-wrap !important;
-                    word-break: break-word !important;
-                    overflow-wrap: break-word !important;
-                }
-                .ql-stroke {
-                    stroke: var(--text-secondary) !important;
-                }
-                .ql-fill {
-                    fill: var(--text-secondary) !important;
-                }
-                .ql-picker {
-                    color: var(--text-secondary) !important;
-                }
-                .ql-picker-options {
-                    background-color: var(--bg-card) !important;
-                    border-color: var(--border-color) !important;
-                }
-            `}</style>
-
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '300px' }}>
-                <ReactQuill
-                  theme="snow"
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '350px' }}>
+                <textarea
+                  ref={noteReviewTextareaRef}
+                  className="input-field custom-scrollbar"
                   value={noteReviewContent}
-                  onChange={setNoteReviewContent}
-                  modules={{
-                    toolbar: [
-                      ['bold', 'italic', 'underline', 'strike'],
-                      ['blockquote', 'code-block'],
-                      [{ 'header': 1 }, { 'header': 2 }],
-                      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-                      [{ 'script': 'sub' }, { 'script': 'super' }],
-                      ['clean']
-                    ]
+                  onChange={(e) => setNoteReviewContent(e.target.value)}
+                  style={{
+                    flex: 1,
+                    fontFamily: 'monospace',
+                    fontSize: '0.9rem',
+                    lineHeight: '1.6',
+                    padding: '1rem',
+                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                    border: '1px solid var(--border-color)',
+                    resize: 'none'
                   }}
+                  placeholder="Tulis catatan Anda di sini..."
                 />
               </div>
 
@@ -2971,7 +3016,7 @@ function App() {
                   onClick={handleFinalizeSave}
                   className="btn-primary"
                 >
-                  <Check size={16} style={{ marginRight: '6px' }} /> Simpan ke Rangkuman
+                  <Check size={16} style={{ marginRight: '6px' }} /> Simpan ke Lampiran
                 </button>
               </div>
             </div>

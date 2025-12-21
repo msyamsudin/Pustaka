@@ -321,3 +321,55 @@ class StorageManager:
             return note_data
             
         return None
+    def update_note_in_summary(self, summary_id: str, note_id: str, note_data: Dict) -> Optional[Dict]:
+        """Updates an existing note in a specific summary variant."""
+        data = self._load_data()
+        found_note = None
+        
+        for book in data:
+            for variant in book['summaries']:
+                if variant['id'] == summary_id:
+                    if 'notes' in variant:
+                        for i, note in enumerate(variant['notes']):
+                            if note.get('id') == note_id:
+                                # Update fields
+                                for key, value in note_data.items():
+                                    note[key] = value
+                                note['timestamp'] = datetime.now().isoformat()
+                                found_note = note
+                                break
+                    if found_note:
+                        book['last_updated'] = datetime.now().isoformat()
+                        break
+            if found_note:
+                break
+        
+        if found_note:
+            data.sort(key=lambda x: x['last_updated'], reverse=True)
+            self._save_data(data)
+            return found_note
+            
+        return None
+    def delete_note_from_summary(self, summary_id: str, note_id: str) -> bool:
+        """Removes a specific note from a summary variant."""
+        data = self._load_data()
+        found = False
+        
+        for book in data:
+            for variant in book['summaries']:
+                if variant['id'] == summary_id:
+                    if 'notes' in variant:
+                        original_count = len(variant['notes'])
+                        variant['notes'] = [n for n in variant['notes'] if n.get('id') != note_id]
+                        if len(variant['notes']) < original_count:
+                            found = True
+                            book['last_updated'] = datetime.now().isoformat()
+                            break
+            if found:
+                break
+        
+        if found:
+            self._save_data(data)
+            return True
+            
+        return False
