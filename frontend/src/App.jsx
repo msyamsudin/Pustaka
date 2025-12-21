@@ -1140,7 +1140,7 @@ function App() {
       setCurrentVariant(null);
       setTokensReceived(0);
     }
-    setStreamingStatus(isResume ? "Re-establishing knowledge gateway..." : (highQuality ? "Initiating Intelligence Tournament (Best-of-N)..." : `Connecting to ${overrideConfig ? overrideConfig.provider : provider} synthesis node...`));
+    setStreamingStatus(isResume ? "Re-establishing knowledge gateway..." : "Initializing synthesis engine...");
 
     abortControllerRef.current = new AbortController();
 
@@ -1192,6 +1192,10 @@ function App() {
                 setError(`Error: ${data.error}`);
                 setSummarizing(false);
                 return;
+              }
+
+              if (data.status) {
+                setStreamingStatus(data.status);
               }
 
               if (data.content) {

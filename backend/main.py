@@ -154,16 +154,10 @@ def summarize_book(req: SummarizationRequest):
     )
     
     if req.enhance_quality:
-        # Note: Tournament mode is non-streaming for now because judging needs all drafts
-        result = summarizer.summarize_tournament(req.metadata)
-        
-        # We wrap it in a pseudo-stream for frontend compatibility if needed, 
-        # or just return as a single event. Let's return as a single data event.
-        def event_generator():
-            yield f"data: {json.dumps({'content': result.get('content', '')})}\n\n"
-            yield f"data: {json.dumps({'done': True, **{k:v for k,v in result.items() if k != 'content'}})}\n\n"
-            
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            summarizer.summarize_tournament_stream(req.metadata),
+            media_type="text/event-stream"
+        )
 
     return StreamingResponse(
         summarizer.summarize_stream(req.metadata, partial_content=req.partial_content),

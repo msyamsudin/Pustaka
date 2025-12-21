@@ -26,7 +26,7 @@ class BookSummarizer:
         model_name: Optional[str] = None, 
         provider: str = "OpenRouter", 
         base_url: Optional[str] = None, 
-        timeout: int = 60, 
+        timeout: int = 300, 
         max_retries: int = 3
     ):
         self.api_key = api_key
@@ -465,6 +465,148 @@ class BookSummarizer:
         }
         
         return FALLBACK_PRICING.get(self.model_name)
+
+    def summarize_tournament_stream(self, book_metadata: List[Dict], n: int = 1) -> Generator[str, None, None]:
+        """Stream multiple summaries generation and synthesis"""
+        # Validate input
+        if not book_metadata:
+            yield f"data: {json.dumps({'error': 'Empty book metadata provided'})}\n\n"
+            return
+        
+        if n < 1:
+            yield f"data: {json.dumps({'error': 'Tournament requires at least 1 draft'})}\n\n"
+            return
+
+        import concurrent.futures
+        
+        drafts = []
+        usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        durations = []
+        
+        def generate_draft():
+            return self.summarize(book_metadata)
+        
+        last_error = "Unknown error"
+        yield f"data: {json.dumps({'content': '', 'status': f'Generating {n} draft(s)...'})}\n\n"
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(n, 5)) as executor:
+            futures = [executor.submit(generate_draft) for _ in range(n)]
+            
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    res = future.result()
+                    if "content" in res:
+                        drafts.append(res["content"])
+                        if "usage" in res:
+                            usage_total["prompt_tokens"] += res["usage"]["prompt_tokens"]
+                            usage_total["completion_tokens"] += res["usage"]["completion_tokens"]
+                            usage_total["total_tokens"] += res["usage"]["total_tokens"]
+                        if "duration_seconds" in res:
+                            durations.append(res["duration_seconds"])
+                    elif "error" in res:
+                        last_error = res["error"]
+                except Exception as e:
+                    last_error = str(e)
+                    continue
+
+        if not drafts:
+            yield f"data: {json.dumps({'error': f'Failed to generate any drafts. Cause: {last_error}'})}\n\n"
+            return
+
+        # Judge stage
+        try:
+            metadata = self._extract_metadata(book_metadata)
+        except BookSummarizerError as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            return
+
+        judge_prompt = self._get_full_prompt(
+            metadata["title"],
+            metadata["author"],
+            metadata["genre"],
+            metadata["year"],
+            "",
+            "",
+            mode="judge",
+            drafts=drafts
+        )
+        
+        yield f"data: {json.dumps({'content': '', 'status': 'Refining & synthesizing final artifact... (This may take a moment)'})}\n\n"
+        
+        try:
+            start_judge = time.time()
+            content_parts = []
+            final_usage = None
+            
+            if self.provider == "Ollama":
+                for chunk in self._stream_ollama(judge_prompt, start_judge):
+                    # _stream_ollama already yields 'data: ...'
+                    # We need to intercept to collect content and stats
+                    yield chunk
+                    
+                    # Try to extract content for our local collection
+                    try:
+                        if chunk.startswith("data: "):
+                            raw_data = json.loads(chunk[6:])
+                            if "content" in raw_data:
+                                content_parts.append(raw_data["content"])
+                            if raw_data.get("done") and "usage" in raw_data:
+                                final_usage = raw_data["usage"]
+                    except:
+                        pass
+            else:
+                if not self.client:
+                    yield f"data: {json.dumps({'error': 'AI client not initialized'})}\n\n"
+                    return
+
+                with self._client_lock:
+                    stream = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=[{"role": "user", "content": judge_prompt}],
+                        stream=True,
+                        stream_options={"include_usage": True}
+                    )
+                
+                for chunk in stream:
+                    if hasattr(chunk, 'usage') and chunk.usage:
+                        final_usage = {
+                            "prompt_tokens": chunk.usage.prompt_tokens,
+                            "completion_tokens": chunk.usage.completion_tokens,
+                            "total_tokens": chunk.usage.total_tokens
+                        }
+
+                    if chunk.choices and len(chunk.choices) > 0:
+                        if chunk.choices[0].delta.content:
+                            content = chunk.choices[0].delta.content
+                            content_parts.append(content)
+                            yield f"data: {json.dumps({'content': content})}\n\n"
+            
+            # Final stats
+            end_judge = time.time()
+            if final_usage:
+                usage_total["prompt_tokens"] += final_usage["prompt_tokens"]
+                usage_total["completion_tokens"] += final_usage["completion_tokens"]
+                usage_total["total_tokens"] += final_usage["total_tokens"]
+            
+            avg_duration = sum(durations) / len(durations) if durations else 0
+            
+            stats = {
+                "done": True,
+                "usage": usage_total,
+                "model": self.model_name,
+                "provider": self.provider,
+                "cost_estimate": self._calculate_cost(
+                    usage_total["prompt_tokens"], 
+                    usage_total["completion_tokens"]
+                ),
+                "duration_seconds": round(avg_duration + (end_judge - start_judge), 2),
+                "is_enhanced": True,
+                "draft_count": len(drafts)
+            }
+            yield f"data: {json.dumps(stats)}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'Judging failed: {str(e)}'})}\n\n"
 
     def summarize_tournament(self, book_metadata: List[Dict], n: int = 1) -> Dict:
         """Generate multiple summaries and synthesize the best one"""
