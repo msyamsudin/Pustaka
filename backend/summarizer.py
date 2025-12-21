@@ -466,14 +466,14 @@ class BookSummarizer:
         
         return FALLBACK_PRICING.get(self.model_name)
 
-    def summarize_tournament(self, book_metadata: List[Dict], n: int = 3) -> Dict:
+    def summarize_tournament(self, book_metadata: List[Dict], n: int = 1) -> Dict:
         """Generate multiple summaries and synthesize the best one"""
         # Validate input
         if not book_metadata:
             return {"error": "Empty book metadata provided"}
         
-        if n < 2:
-            return {"error": "Tournament requires at least 2 drafts"}
+        if n < 1:
+            return {"error": "Tournament requires at least 1 draft"}
         
         if n > 10:
             return {"error": "Maximum 10 drafts allowed to prevent rate limiting"}
