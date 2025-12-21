@@ -466,7 +466,7 @@ class BookSummarizer:
         
         return FALLBACK_PRICING.get(self.model_name)
 
-    def summarize_tournament_stream(self, book_metadata: List[Dict], n: int = 1) -> Generator[str, None, None]:
+    def summarize_tournament_stream(self, book_metadata: List[Dict], n: int = 3) -> Generator[str, None, None]:
         """Stream multiple summaries generation and synthesis"""
         # Validate input
         if not book_metadata:
@@ -487,12 +487,12 @@ class BookSummarizer:
             return self.summarize(book_metadata)
         
         last_error = "Unknown error"
-        yield f"data: {json.dumps({'content': '', 'status': f'Generating {n} draft(s)...'})}\n\n"
+        yield f"data: {json.dumps({'content': '', 'status': f'Generating {n} draft(s)...', 'progress': 5})}\n\n"
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(n, 5)) as executor:
             futures = [executor.submit(generate_draft) for _ in range(n)]
             
-            for future in concurrent.futures.as_completed(futures):
+            for i, future in enumerate(concurrent.futures.as_completed(futures)):
                 try:
                     res = future.result()
                     if "content" in res:
@@ -503,6 +503,10 @@ class BookSummarizer:
                             usage_total["total_tokens"] += res["usage"]["total_tokens"]
                         if "duration_seconds" in res:
                             durations.append(res["duration_seconds"])
+                        
+                        # Draft progress (0-75%)
+                        progress = 5 + int(((i + 1) / n) * 70)
+                        yield f"data: {json.dumps({'content': '', 'status': f'Draft {i+1}/{n} completed...', 'progress': progress})}\n\n"
                     elif "error" in res:
                         last_error = res["error"]
                 except Exception as e:
@@ -531,7 +535,7 @@ class BookSummarizer:
             drafts=drafts
         )
         
-        yield f"data: {json.dumps({'content': '', 'status': 'Refining & synthesizing final artifact... (This may take a moment)'})}\n\n"
+        yield f"data: {json.dumps({'content': '', 'status': 'Refining & synthesizing final artifact...', 'progress': 80})}\n\n"
         
         try:
             start_judge = time.time()
@@ -540,11 +544,10 @@ class BookSummarizer:
             
             if self.provider == "Ollama":
                 for chunk in self._stream_ollama(judge_prompt, start_judge):
-                    # _stream_ollama already yields 'data: ...'
-                    # We need to intercept to collect content and stats
+                    # Inject progress into Ollama chunks if possible, or just pass through
+                    # To keep it simple, we'll let the frontend handle the increment if it's already at 80%
                     yield chunk
                     
-                    # Try to extract content for our local collection
                     try:
                         if chunk.startswith("data: "):
                             raw_data = json.loads(chunk[6:])
@@ -579,7 +582,10 @@ class BookSummarizer:
                         if chunk.choices[0].delta.content:
                             content = chunk.choices[0].delta.content
                             content_parts.append(content)
-                            yield f"data: {json.dumps({'content': content})}\n\n"
+                            # Add increasing progress during refinement stream (80-99%)
+                            # We don't know the exact length, so we'll just slowly climb
+                            current_prog = min(80 + (len(content_parts) // 10), 99)
+                            yield f"data: {json.dumps({'content': content, 'progress': current_prog})}\n\n"
             
             # Final stats
             end_judge = time.time()
@@ -592,6 +598,7 @@ class BookSummarizer:
             
             stats = {
                 "done": True,
+                "progress": 100,
                 "usage": usage_total,
                 "model": self.model_name,
                 "provider": self.provider,
@@ -608,7 +615,7 @@ class BookSummarizer:
         except Exception as e:
             yield f"data: {json.dumps({'error': f'Judging failed: {str(e)}'})}\n\n"
 
-    def summarize_tournament(self, book_metadata: List[Dict], n: int = 1) -> Dict:
+    def summarize_tournament(self, book_metadata: List[Dict], n: int = 3) -> Dict:
         """Generate multiple summaries and synthesize the best one"""
         # Validate input
         if not book_metadata:

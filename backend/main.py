@@ -115,6 +115,7 @@ class SummarizationRequest(BaseModel):
     base_url: Optional[str] = None
     partial_content: Optional[str] = None
     enhance_quality: Optional[bool] = False
+    draft_count: Optional[int] = 3
     
 class SynthesisRequest(BaseModel):
     summary_ids: List[str]
@@ -155,7 +156,7 @@ def summarize_book(req: SummarizationRequest):
     
     if req.enhance_quality:
         return StreamingResponse(
-            summarizer.summarize_tournament_stream(req.metadata),
+            summarizer.summarize_tournament_stream(req.metadata, n=req.draft_count or 3),
             media_type="text/event-stream"
         )
 

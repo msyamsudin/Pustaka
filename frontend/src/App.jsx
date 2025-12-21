@@ -284,14 +284,42 @@ const Toast = ({ message, type = 'success', onClose }) => {
 
 
 
-const SkeletonSummary = ({ status, onStop }) => (
-  <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem', border: '1px dashed var(--border-color)', position: 'relative' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+const SkeletonSummary = ({ status, progress, onStop }) => (
+  <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem', border: '1px dashed var(--border-color)', position: 'relative', overflow: 'hidden' }}>
+    {/* Progress Bar Background */}
+    {progress > 0 && (
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        height: '4px',
+        width: '100%',
+        background: 'rgba(255,255,255,0.05)',
+        zIndex: 10
+      }}>
+        <div style={{
+          height: '100%',
+          width: `${progress}%`,
+          background: 'linear-gradient(90deg, var(--accent-color), #60a5fa)',
+          boxShadow: '0 0 10px var(--accent-color)',
+          transition: 'width 0.4s ease-out'
+        }}></div>
+      </div>
+    )}
+
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', padding: progress > 0 ? '1rem 0 0 0' : '0' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <div className="spinner" style={{ width: '20px', height: '20px' }}></div>
-        <span style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-          {status || "Initializing intelligence synthesis engine..."}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+            {status || "Initializing intelligence synthesis engine..."}
+          </span>
+          {progress > 0 && (
+            <span style={{ fontSize: '0.7rem', color: 'var(--accent-color)', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+              PHASE PROGRESS: {progress}%
+            </span>
+          )}
+        </div>
       </div>
       <button
         onClick={onStop}
@@ -416,6 +444,7 @@ function App() {
   const [streamingStatus, setStreamingStatus] = useState('');
   const [tokensReceived, setTokensReceived] = useState(0);
   const [highQuality, setHighQuality] = useState(false);
+  const [draftCount, setDraftCount] = useState(3);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedVariantIds, setSelectedVariantIds] = useState([]);
   const abortControllerRef = useRef(null);
@@ -434,6 +463,7 @@ function App() {
   const [isElaborating, setIsElaborating] = useState(false);
   const [elaborationQuery, setElaborationQuery] = useState("");
   const [showElaborationPanel, setShowElaborationPanel] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   // Note Review State
   const [isNoteReviewOpen, setIsNoteReviewOpen] = useState(false);
@@ -1139,6 +1169,7 @@ function App() {
       setNotes([]); // Reset notes for new summary
       setCurrentVariant(null);
       setTokensReceived(0);
+      setProgress(0);
     }
     setStreamingStatus(isResume ? "Re-establishing knowledge gateway..." : "Initializing synthesis engine...");
 
@@ -1160,7 +1191,8 @@ function App() {
           model: overrideConfig ? overrideConfig.model : (provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)),
           base_url: overrideConfig ? overrideConfig.base_url : (provider === 'Ollama' ? ollamaBaseUrl : null),
           partial_content: isResume ? summary : null,
-          enhance_quality: highQuality
+          enhance_quality: highQuality,
+          draft_count: highQuality ? draftCount : 1
         }),
       });
 
@@ -1196,6 +1228,10 @@ function App() {
 
               if (data.status) {
                 setStreamingStatus(data.status);
+              }
+
+              if (data.progress) {
+                setProgress(data.progress);
               }
 
               if (data.content) {
@@ -2248,6 +2284,37 @@ function App() {
                         <Sparkles size={14} color={highQuality ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={highQuality ? 1 : 0.5} />
                       </div>
 
+                      {highQuality && !summary && (
+                        <div className="animate-fade-in" style={{
+                          width: '100%',
+                          maxWidth: '240px',
+                          background: 'rgba(255,255,255,0.02)',
+                          padding: '0.75rem',
+                          borderRadius: '12px',
+                          border: '1px solid var(--border-color)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>DRAFT DEPTH: {draftCount}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="10"
+                            value={draftCount}
+                            onChange={(e) => setDraftCount(parseInt(e.target.value))}
+                            style={{
+                              width: '100%',
+                              accentColor: 'var(--accent-color)',
+                              cursor: 'pointer',
+                              height: '4px'
+                            }}
+                          />
+                        </div>
+                      )}
+
                       <button
                         onClick={() => handleSummarize(false)}
                         className="btn-primary"
@@ -2268,7 +2335,7 @@ function App() {
 
                       {highQuality && !existingSummary && (
                         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
-                          * Mode ini menggunakan biaya token ~2x lebih banyak (1 draf + 1 refinement).
+                          * Mode ini menggunakan biaya token ~{draftCount + 1}x lebih banyak ({draftCount} draf + 1 refinement).
                         </p>
                       )}
                     </div>
@@ -2308,7 +2375,7 @@ function App() {
         )}
 
         {/* Summary Result Area */}
-        {summarizing && !summary && !showSettings && <SkeletonSummary status={streamingStatus} onStop={() => abortControllerRef.current?.abort()} />}
+        {summarizing && !summary && !showSettings && <SkeletonSummary status={streamingStatus} progress={progress} onStop={() => abortControllerRef.current?.abort()} />}
 
         {/* Summary Result */}
         {summary && !showSettings && (
