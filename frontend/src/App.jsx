@@ -401,6 +401,8 @@ function App() {
   const [verificationResult, setVerificationResult] = useState(null);
   const [summary, setSummary] = useState(null);
   const [usageStats, setUsageStats] = useState(null);
+  const [diversityAnalysis, setDiversityAnalysis] = useState(null);
+  const [synthesisMetadata, setSynthesisMetadata] = useState(null);
 
   const [error, setError] = useState(null);
 
@@ -1348,12 +1350,25 @@ function App() {
                   duration_seconds: data.duration_seconds,
                   is_synthesis: true,
                   source_count: data.source_draft_count,
-                  source_models: data.source_models || []
+                  source_models: data.source_models || [],
+                  source_summary_ids: data.source_summary_ids || [],
+                  synthesis_method: data.synthesis_method,
+                  sections_analyzed: data.sections_analyzed
                 });
+
+                // Store diversity analysis and synthesis metadata
+                if (data.diversity_analysis) {
+                  setDiversityAnalysis(data.diversity_analysis);
+                }
+                if (data.synthesis_metadata) {
+                  setSynthesisMetadata(data.synthesis_metadata);
+                }
+
                 showToast("Sintesis berhasil!", "success");
               }
             } catch (e) {
               console.error("Syntax error in stream", e);
+              throw e; // Re-throw to be caught by outer catch
             }
           }
         }
@@ -1364,7 +1379,9 @@ function App() {
       if (err.name === 'AbortError') {
         showToast("Sintesis dibatalkan", "info");
       } else {
+        console.error("Synthesis error:", err);
         setError(`Sintesis Gagal: ${err.message}`);
+        showAlert("Sintesis Gagal", err.message);
       }
     } finally {
       setSummarizing(false);
@@ -2716,6 +2733,152 @@ function App() {
                     </span>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Diversity Analysis Visualization */}
+            {diversityAnalysis && usageStats?.is_synthesis && (
+              <div style={{
+                marginTop: '1.5rem',
+                padding: '1rem',
+                background: 'rgba(255,255,255,0.02)',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)'
+              }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
+                  📊 Draft Diversity Analysis
+                </div>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1', minWidth: '200px' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                      Diversity Score
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{
+                        flex: 1,
+                        height: '8px',
+                        background: 'rgba(255,255,255,0.1)',
+                        borderRadius: '4px',
+                        overflow: 'hidden'
+                      }}>
+                        <div style={{
+                          width: `${diversityAnalysis.diversity_score * 100}%`,
+                          height: '100%',
+                          background: diversityAnalysis.diversity_score < 0.15 ? 'var(--error)' :
+                            diversityAnalysis.diversity_score < 0.40 ? 'var(--warning)' : 'var(--success)',
+                          transition: 'width 0.3s ease'
+                        }} />
+                      </div>
+                      <span style={{ fontSize: '0.9rem', fontWeight: '600', minWidth: '45px' }}>
+                        {(diversityAnalysis.diversity_score * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.25rem', fontStyle: 'italic' }}>
+                      {diversityAnalysis.interpretation === 'very_similar' && '⚠️ Varian sangat mirip'}
+                      {diversityAnalysis.interpretation === 'moderate_diversity' && '✓ Keragaman moderat'}
+                      {diversityAnalysis.interpretation === 'high_diversity' && '✨ Keragaman tinggi (ideal)'}
+                    </div>
+                  </div>
+                  {diversityAnalysis.most_different_sections && diversityAnalysis.most_different_sections.length > 0 && (
+                    <div style={{ flex: '1', minWidth: '200px' }}>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                        Bagian Paling Berbeda
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                        {diversityAnalysis.most_different_sections.slice(0, 3).map((section, idx) => (
+                          <span key={idx} className="badge" style={{
+                            background: 'rgba(147, 51, 234, 0.1)',
+                            color: '#9333ea',
+                            border: '1px solid rgba(147, 51, 234, 0.2)',
+                            fontSize: '0.7rem',
+                            padding: '0.2rem 0.5rem'
+                          }}>
+                            {section}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Synthesis Metadata Display */}
+            {synthesisMetadata && usageStats?.is_synthesis && (
+              <div style={{
+                marginTop: '1.5rem',
+                padding: '1rem',
+                background: 'rgba(255,255,255,0.02)',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)'
+              }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
+                  🔬 Synthesis Transparency Report
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                  <div className="badge" style={{ background: 'rgba(34, 197, 94, 0.1)', color: 'var(--success)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                    ✨ {synthesisMetadata.unique_insights_count} Merged Insights
+                  </div>
+                  <div className="badge" style={{ background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
+                    ⚖️ {synthesisMetadata.conflict_resolutions} Conflicts Resolved
+                  </div>
+                  {usageStats.sections_analyzed && (
+                    <div className="badge" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                      📑 {usageStats.sections_analyzed} Sections Analyzed
+                    </div>
+                  )}
+                  {usageStats.synthesis_method && (
+                    <div className="badge" style={{ background: 'rgba(147, 51, 234, 0.1)', color: '#9333ea', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
+                      🔧 {usageStats.synthesis_method === 'section_by_section' ? 'Section-by-Section' : 'Whole Document'}
+                    </div>
+                  )}
+                </div>
+
+                {synthesisMetadata.section_sources && Object.keys(synthesisMetadata.section_sources).length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                      Section Sources:
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0.5rem', maxHeight: '200px', overflowY: 'auto' }} className="custom-scrollbar">
+                      {Object.entries(synthesisMetadata.section_sources).map(([section, source]) => (
+                        <div key={section} style={{
+                          padding: '0.4rem 0.6rem',
+                          background: 'rgba(255,255,255,0.03)',
+                          borderRadius: '4px',
+                          fontSize: '0.7rem',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '0.5rem'
+                        }}>
+                          <span style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {section.split('(')[0].trim()}
+                          </span>
+                          <span style={{
+                            fontSize: '0.65rem',
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '3px',
+                            whiteSpace: 'nowrap',
+                            background: source === 'merged' ? 'rgba(34, 197, 94, 0.2)' :
+                              source === 'single_source' ? 'rgba(59, 130, 246, 0.2)' :
+                                source === 'synthesis_failed_using_fallback' ? 'rgba(251, 191, 36, 0.2)' :
+                                  source.includes('dominant') ? 'rgba(251, 191, 36, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                            color: source === 'merged' ? 'var(--success)' :
+                              source === 'single_source' ? '#3b82f6' :
+                                source === 'synthesis_failed_using_fallback' ? '#fbbf24' :
+                                  source.includes('dominant') ? '#fbbf24' : 'var(--error)'
+                          }}>
+                            {source === 'merged' ? '🔀 Merged' :
+                              source === 'single_source' ? '📄 Single Source' :
+                                source === 'synthesis_failed_using_fallback' ? '⚠️ Fallback' :
+                                  source.includes('dominant') ? `📌 Draft ${source.match(/\d+/)?.[0]}` : '❌ Failed'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

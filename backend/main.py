@@ -169,9 +169,10 @@ def summarize_book(req: SummarizationRequest):
 def synthesize_summaries(req: SynthesisRequest):
     data = storage_manager.get_all_summaries()
     
-    # Extract draf contents based on IDs
+    # Extract draf contents based on IDs with validation
     drafts = []
     source_models = []
+    book_ids = set()
     title = "Unknown"
     author = "Unknown"
     genre = ""
@@ -180,15 +181,41 @@ def synthesize_summaries(req: SynthesisRequest):
     for book in data:
         for s in book['summaries']:
             if s['id'] in req.summary_ids:
-                drafts.append(s['summary_content'])
+                # Track which book this summary belongs to
+                book_ids.add(book['id'])
+                
+                # Validate draft content is not empty
+                draft_content = s.get('summary_content', '').strip()
+                if not draft_content:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Summary {s['id']} has empty content and cannot be synthesized."
+                    )
+                
+                drafts.append(draft_content)
                 source_models.append(s.get('model', 'Unknown'))
                 title = book['title']
                 author = book['author']
                 genre = book.get('genre', '')
                 year = book.get('publishedDate', '')
 
+    # Validation 1: Check if any summaries were found
     if not drafts:
         raise HTTPException(status_code=404, detail="No matching summaries found for synthesis.")
+    
+    # Validation 2: Ensure all summaries come from the same book
+    if len(book_ids) > 1:
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot synthesize summaries from different books. All selected variants must be from the same book."
+        )
+    
+    # Validation 3: Ensure we have at least 2 drafts
+    if len(drafts) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Synthesis requires at least 2 summary variants. Please select more variants."
+        )
 
     # API Configuration
     config = config_manager.load_config()
@@ -199,7 +226,16 @@ def synthesize_summaries(req: SynthesisRequest):
 
     summarizer = BookSummarizer(api_key=api_key, model_name=model, provider=provider, base_url=base_url)
     
-    result = summarizer.summarize_synthesize(title, author, genre, year, drafts)
+    # Calculate diversity analysis before synthesis
+    diversity_analysis = summarizer._calculate_draft_diversity(drafts)
+    
+    # Perform section-by-section synthesis
+    result = summarizer.summarize_synthesize(title, author, genre, year, drafts, diversity_analysis=diversity_analysis)
+    
+    # Add source tracking metadata
+    result['source_summary_ids'] = req.summary_ids
+    result['source_draft_count'] = len(drafts)
+    result['diversity_analysis'] = diversity_analysis
     
     def event_generator():
         yield f"data: {json.dumps({'content': result.get('content', '')})}\n\n"

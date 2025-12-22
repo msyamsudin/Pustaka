@@ -733,30 +733,228 @@ class BookSummarizer:
                 "usage": usage_total
             }
 
-    def summarize_synthesize(self, title: str, author: str, genre: str, year: str, drafts: List[str]) -> Dict:
-        """Synthesize multiple drafts into a final summary (non-streaming)"""
+    def summarize_synthesize(self, title: str, author: str, genre: str, year: str, drafts: List[str], diversity_analysis: Dict = None) -> Dict:
+        """Synthesize multiple drafts into a final summary using section-by-section approach"""
         if not drafts:
             return {"error": "No drafts provided for synthesis"}
-
-        prompt = self._get_full_prompt(
-            title,
-            author,
-            genre,
-            year,
-            "", # context_description
-            "", # source_note
-            mode="judge",
-            drafts=drafts
-        )
-
+        
+        # Calculate diversity if not provided
+        if not diversity_analysis:
+            diversity_analysis = self._calculate_draft_diversity(drafts)
+        
+        # Standard section names in intelligence brief
+        STANDARD_SECTIONS = [
+            "EXECUTIVE ANALYTICAL BRIEF (Core Summary)",
+            "CORE THESIS & KEY ARGUMENTS (Key Points)",
+            "CONCEPTUAL ARCHITECTURE (Topic Structure)",
+            "GLOSSARY OF DENSITY (Technical Concepts & Terms)",
+            "REASONING BLUEPRINT (Logic Framework)",
+            "ACTIONABLE INTELLIGENCE & IMPLICATIONS",
+            "REPRESENTATIVE SYNTHESIS (Iconic Quote)",
+            "COMPARATIVE POSITIONING",
+            "IMPLEMENTATION ROADMAP",
+            "CRITICAL EVALUATION & LIMITATIONS"
+        ]
+        
         try:
             start_time = time.time()
             
+            
+            # Extract sections from all drafts
+            all_sections = []
+            for draft in drafts:
+                sections = self._extract_sections(draft)
+                all_sections.append(sections)
+            
+            # CRITICAL FIX: Use UNION of all sections, not intersection
+            # This ensures we process ALL sections from ALL drafts
+            all_section_names = set()
+            for sections in all_sections:
+                all_section_names.update(sections.keys())
+            
+            # If no sections found at all, fall back to whole-document synthesis
+            if not all_section_names:
+                return self._synthesize_whole_document(title, author, genre, year, drafts, start_time)
+            
+            # Synthesize each section independently
+            synthesized_sections = {}
+            section_metadata = {}
+            total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            
+            for i, section_name in enumerate(sorted(all_section_names)):
+                # Extract this section from drafts that have it
+                section_contents = []
+                for sections in all_sections:
+                    if section_name in sections:
+                        section_contents.append(sections[section_name])
+                
+                # Skip if no content (shouldn't happen, but safety check)
+                if not section_contents:
+                    continue
+                
+                # If only one draft has this section, use it directly without synthesis
+                if len(section_contents) == 1:
+                    synthesized_sections[section_name] = section_contents[0]
+                    section_metadata[section_name] = "single_source"
+                    continue
+                
+                # Create section-specific synthesis prompt
+                section_prompt = self._create_section_synthesis_prompt(
+                    section_name, section_contents, title, author, genre, year, len(drafts)
+                )
+                
+                # Synthesize this section
+                section_result = self._synthesize_section(section_prompt, start_time)
+                
+                if "error" in section_result:
+                    # Log the error for debugging
+                    print(f"⚠️ Section synthesis failed for '{section_name}': {section_result['error']}")
+                    
+                    # FALLBACK: Use content from first draft instead of failing completely
+                    if section_contents:
+                        synthesized_sections[section_name] = section_contents[0]
+                        section_metadata[section_name] = "synthesis_failed_using_fallback"
+                    else:
+                        section_metadata[section_name] = "synthesis_failed"
+                    continue
+                
+                synthesized_sections[section_name] = section_result["content"]
+                
+                # Track which draft dominated (simple heuristic: most similar to result)
+                from difflib import SequenceMatcher
+                similarities = [SequenceMatcher(None, content, section_result["content"]).ratio() 
+                               for content in section_contents]
+                dominant_draft = similarities.index(max(similarities)) + 1
+                
+                if max(similarities) > 0.7:
+                    section_metadata[section_name] = f"draft_{dominant_draft}_dominant"
+                else:
+                    section_metadata[section_name] = "merged"
+                
+                # Accumulate usage
+                if "usage" in section_result:
+                    total_usage["prompt_tokens"] += section_result["usage"]["prompt_tokens"]
+                    total_usage["completion_tokens"] += section_result["usage"]["completion_tokens"]
+                    total_usage["total_tokens"] += section_result["usage"]["total_tokens"]
+            
+            
+            # Reconstruct full document from synthesized sections
+            final_content_parts = []
+            section_counter = 1
+            
+            # Create a mapping of keywords to standard sections for better matching
+            section_keywords = {
+                "EXECUTIVE ANALYTICAL BRIEF": ["executive", "analytical", "brief", "core summary"],
+                "CORE THESIS & KEY ARGUMENTS": ["core", "thesis", "key arguments", "key points"],
+                "CONCEPTUAL ARCHITECTURE": ["conceptual", "architecture", "topic structure"],
+                "GLOSSARY OF DENSITY": ["glossary", "density", "technical concepts", "terms"],
+                "REASONING BLUEPRINT": ["reasoning", "blueprint", "logic framework"],
+                "ACTIONABLE INTELLIGENCE & IMPLICATIONS": ["actionable", "intelligence", "implications"],
+                "REPRESENTATIVE SYNTHESIS": ["representative", "synthesis", "iconic", "quote"],
+                "COMPARATIVE POSITIONING": ["comparative", "positioning"],
+                "IMPLEMENTATION ROADMAP": ["implementation", "roadmap"],
+                "CRITICAL EVALUATION & LIMITATIONS": ["critical", "evaluation", "limitations"]
+            }
+            
+            for section_name in STANDARD_SECTIONS:
+                # Try to find matching section with multiple strategies
+                matched_section = None
+                
+                # Strategy 1: Exact match (case-insensitive)
+                for synth_section in synthesized_sections.keys():
+                    if section_name.upper() == synth_section.upper():
+                        matched_section = synth_section
+                        break
+                
+                # Strategy 2: Bidirectional substring match
+                if not matched_section:
+                    section_base = section_name.split('(')[0].strip().upper()
+                    for synth_section in synthesized_sections.keys():
+                        synth_base = synth_section.split('(')[0].strip().upper()
+                        # Check both directions
+                        if section_base in synth_base or synth_base in section_base:
+                            matched_section = synth_section
+                            break
+                
+                # Strategy 3: Keyword-based matching
+                if not matched_section:
+                    section_base = section_name.split('(')[0].strip()
+                    keywords = section_keywords.get(section_base, [])
+                    
+                    for synth_section in synthesized_sections.keys():
+                        synth_upper = synth_section.upper()
+                        # Check if at least 2 keywords match
+                        matches = sum(1 for kw in keywords if kw.upper() in synth_upper)
+                        if matches >= 2:
+                            matched_section = synth_section
+                            break
+                
+                if matched_section:
+                    final_content_parts.append(f"## {section_counter}. {matched_section}")
+                    final_content_parts.append(synthesized_sections[matched_section])
+                    final_content_parts.append("")  # Empty line between sections
+                    section_counter += 1
+            
+            # Fallback: Add any synthesized sections that weren't matched
+            # This ensures no synthesized content is lost
+            matched_sections_set = set()
+            for part in final_content_parts:
+                if part.startswith("## "):
+                    # Extract section name from "## 1. SECTION NAME"
+                    section_name = part.split(". ", 1)[1] if ". " in part else ""
+                    matched_sections_set.add(section_name)
+            
+            for synth_section in synthesized_sections.keys():
+                if synth_section not in matched_sections_set:
+                    final_content_parts.append(f"## {section_counter}. {synth_section}")
+                    final_content_parts.append(synthesized_sections[synth_section])
+                    final_content_parts.append("")
+                    section_counter += 1
+            
+            final_content = "\n".join(final_content_parts).strip()
+            
+            end_time = time.time()
+            duration = round(end_time - start_time, 2)
+            
+            # Calculate synthesis transparency metrics
+            unique_insights_count = len([v for v in section_metadata.values() if v == "merged"])
+            conflict_resolutions = len([v for v in section_metadata.values() if "dominant" in v])
+            
+            return {
+                "content": final_content,
+                "usage": total_usage,
+                "model": self.model_name,
+                "provider": self.provider,
+                "cost_estimate": self._calculate_cost(total_usage["prompt_tokens"], total_usage["completion_tokens"]),
+                "duration_seconds": duration,
+                "is_synthesized": True,
+                "draft_count": len(drafts),
+                "synthesis_method": "section_by_section",
+                "sections_analyzed": len(synthesized_sections),
+                "synthesis_metadata": {
+                    "section_sources": section_metadata,
+                    "unique_insights_count": unique_insights_count,
+                    "conflict_resolutions": conflict_resolutions,
+                    "diversity_score": diversity_analysis.get("diversity_score", 0)
+                }
+            }
+            
+        except Exception as e:
+            return {"error": f"Failed to synthesize summaries: {str(e)}"}
+    
+    def _synthesize_whole_document(self, title: str, author: str, genre: str, year: str, drafts: List[str], start_time: float) -> Dict:
+        """Fallback to whole-document synthesis if section extraction fails"""
+        prompt = self._get_full_prompt(
+            title, author, genre, year, "", "", mode="judge", drafts=drafts
+        )
+        
+        try:
             if self.provider == "Ollama":
                 res = self._summarize_ollama(prompt, start_time)
                 if "content" in res:
                     res["is_synthesized"] = True
                     res["draft_count"] = len(drafts)
+                    res["synthesis_method"] = "whole_document_fallback"
                 return res
             
             if not self.client:
@@ -770,13 +968,10 @@ class BookSummarizer:
             
             end_time = time.time()
             duration = round(end_time - start_time, 2)
-            
             usage = completion.usage
-            raw_content = completion.choices[0].message.content
-            cleaned_content = self._clean_output(raw_content)
             
             return {
-                "content": cleaned_content,
+                "content": self._clean_output(completion.choices[0].message.content),
                 "usage": {
                     "prompt_tokens": usage.prompt_tokens,
                     "completion_tokens": usage.completion_tokens,
@@ -787,10 +982,270 @@ class BookSummarizer:
                 "cost_estimate": self._calculate_cost(usage.prompt_tokens, usage.completion_tokens),
                 "duration_seconds": duration,
                 "is_synthesized": True,
-                "draft_count": len(drafts)
+                "draft_count": len(drafts),
+                "synthesis_method": "whole_document_fallback"
             }
         except Exception as e:
-            return {"error": f"Failed to synthesize summaries: {str(e)}"}
+            return {"error": f"Failed to synthesize: {str(e)}"}
+    
+    def _create_section_synthesis_prompt(self, section_name: str, section_contents: List[str], 
+                                         title: str, author: str, genre: str, year: str, draft_count: int) -> str:
+        """Create prompt for synthesizing a specific section"""
+        
+        # Format section contents
+        formatted_contents = "\n\n".join([
+            f"═══ DRAFT {i+1} - {section_name} ═══\n{content}"
+            for i, content in enumerate(section_contents)
+        ])
+        
+        return f"""<section_synthesis_task>
+You are synthesizing ONLY the "{section_name}" section from {draft_count} intelligence brief drafts.
+
+BOOK CONTEXT:
+📚 "{title}" by {author} ({year}, {genre})
+
+SECTION CONTENT FROM EACH DRAFT:
+{formatted_contents}
+
+SYNTHESIS INSTRUCTIONS:
+1. Apply evaluation rubric:
+   - Factual Accuracy (30%): Consistency, no fabrications
+   - Information Density (35%): Technical concepts, depth of analysis
+   - Structural Coherence (20%): Logical flow, transitions
+   - Linguistic Precision (15%): Standard Indonesian, word economy
+
+2. Extract "best-of-breed" elements:
+   - Best term definitions
+   - Deepest analysis
+   - Most concrete examples
+   - Most representative quotes
+
+3. Merge complementary information from different drafts
+
+4. Resolve conflicts by prioritizing factual accuracy
+
+5. Preserve unique insights if they add substantive value
+
+6. Use `[[number]]` syntax for synthesized quantitative data
+
+OUTPUT REQUIREMENTS:
+- LANGUAGE: Write the content in **Indonesian (Bahasa Indonesia)** using a formal-academic tone.
+- Generate ONLY the synthesized content for "{section_name}".
+- Do not include the header in your response, as it will be added automatically.
+- No meta-commentary or introductions.
+- Do NOT mention which draft you're using
+- Maintain the original section format (prose or bullet points as appropriate)
+
+Begin synthesis:
+</section_synthesis_task>"""
+    
+    def _synthesize_section(self, prompt: str, start_time: float) -> Dict:
+        """Synthesize a single section using AI with retry logic"""
+        max_retries = 3
+        retry_delay = 1  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                if self.provider == "Ollama":
+                    return self._summarize_ollama(prompt, start_time)
+                
+                if not self.client:
+                    return {"error": "AI client not initialized"}
+                
+                with self._client_lock:
+                    completion = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.7  # Slightly higher for synthesis creativity
+                    )
+                
+                usage = completion.usage
+                content = self._clean_output(completion.choices[0].message.content)
+                
+                return {
+                    "content": content,
+                    "usage": {
+                        "prompt_tokens": usage.prompt_tokens,
+                        "completion_tokens": usage.completion_tokens,
+                        "total_tokens": usage.total_tokens
+                    }
+                }
+            except Exception as e:
+                error_msg = str(e)
+                
+                # Check if it's a rate limit error
+                if "rate" in error_msg.lower() or "429" in error_msg:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                        print(f"⏳ Rate limit hit, waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                        time.sleep(wait_time)
+                        continue
+                
+                # If last attempt or non-retryable error, return error
+                if attempt == max_retries - 1:
+                    return {"error": f"Section synthesis failed after {max_retries} attempts: {error_msg}"}
+                
+                # For other errors, retry with short delay
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+        
+        return {"error": "Section synthesis failed: max retries exceeded"}
+
+
+    
+    def _normalize_section_name(self, section_name: str) -> str:
+        """Normalize section names to handle Indonesian/English variations"""
+        # Mapping of Indonesian to English section names
+        name_mappings = {
+            "ESENSI ULTRAMURNI": "EXECUTIVE ANALYTICAL BRIEF",
+            "RINGKASAN EKSEKUTIF": "EXECUTIVE ANALYTICAL BRIEF",
+            "TESIS INTI": "CORE THESIS & KEY ARGUMENTS",
+            "ARGUMEN KUNCI": "CORE THESIS & KEY ARGUMENTS",
+            "ARSITEKTUR KONSEPTUAL": "CONCEPTUAL ARCHITECTURE",
+            "GLOSARIUM DENSITAS": "GLOSSARY OF DENSITY",
+            "KAMUS ISTILAH": "GLOSSARY OF DENSITY",
+            "BLUEPRINT PENALARAN": "REASONING BLUEPRINT",
+            "KERANGKA LOGIKA": "REASONING BLUEPRINT",
+            "INTELIJEN AKSI": "ACTIONABLE INTELLIGENCE & IMPLICATIONS",
+            "IMPLIKASI PRAKTIS": "ACTIONABLE INTELLIGENCE & IMPLICATIONS",
+            "EVALUASI KRITIS": "CRITICAL EVALUATION & LIMITATIONS",
+            "KETERBATASAN": "CRITICAL EVALUATION & LIMITATIONS",
+            "POSISI KOMPARATIF": "COMPARATIVE POSITIONING",
+            "PERBANDINGAN": "COMPARATIVE POSITIONING",
+            "PETA JALAN IMPLEMENTASI": "IMPLEMENTATION ROADMAP",
+            "ROADMAP": "IMPLEMENTATION ROADMAP",
+            "SINTESIS REPRESENTATIF": "REPRESENTATIVE SYNTHESIS",
+            "KUTIPAN IKONIK": "REPRESENTATIVE SYNTHESIS"
+        }
+        
+        # Extract base name (before parentheses)
+        base_name = section_name.split('(')[0].strip().upper()
+        
+        # Check if it matches any known mapping
+        for indo_name, eng_name in name_mappings.items():
+            if indo_name in base_name or base_name in indo_name:
+                return eng_name
+        
+        # If already in English or unknown, return as is
+        return base_name
+    
+    def _extract_sections(self, content: str) -> Dict[str, str]:
+        """Extract sections from intelligence brief based on markdown headers"""
+        import re
+        
+        # Standard section headers (## 1. SECTION NAME)
+        section_pattern = r'^##\s+\d+\.\s+(.+?)$'
+        
+        sections = {}
+        current_section = None
+        current_content = []
+        
+        lines = content.split('\n')
+        
+        for line in lines:
+            match = re.match(section_pattern, line.strip())
+            if match:
+                # Save previous section
+                if current_section:
+                    sections[current_section] = '\n'.join(current_content).strip()
+                
+                # Start new section with normalized name
+                raw_section_name = match.group(1).strip()
+                current_section = self._normalize_section_name(raw_section_name)
+                current_content = []
+            elif current_section:
+                current_content.append(line)
+        
+        # Save last section
+        if current_section:
+            sections[current_section] = '\n'.join(current_content).strip()
+        
+        return sections
+    
+    def _calculate_draft_diversity(self, drafts: List[str]) -> Dict:
+        """Calculate diversity metrics for drafts"""
+        from difflib import SequenceMatcher
+        
+        if len(drafts) < 2:
+            return {
+                "diversity_score": 0.0,
+                "similarity_matrix": [[1.0]],
+                "most_different_sections": [],
+                "interpretation": "single_draft"
+            }
+        
+        # Calculate pairwise similarities
+        n = len(drafts)
+        similarity_matrix = [[0.0] * n for _ in range(n)]
+        
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    similarity_matrix[i][j] = 1.0
+                else:
+                    ratio = SequenceMatcher(None, drafts[i], drafts[j]).ratio()
+                    similarity_matrix[i][j] = round(ratio, 3)
+        
+        # Calculate average similarity (excluding diagonal)
+        total_similarity = 0
+        count = 0
+        for i in range(n):
+            for j in range(i + 1, n):
+                total_similarity += similarity_matrix[i][j]
+                count += 1
+        
+        avg_similarity = total_similarity / count if count > 0 else 0
+        diversity_score = round(1 - avg_similarity, 3)
+        
+        # Analyze section-level differences
+        most_different_sections = []
+        try:
+            # Extract sections from all drafts
+            all_sections = [self._extract_sections(d) for d in drafts]
+            
+            # Find common section names
+            common_sections = set(all_sections[0].keys())
+            for sections in all_sections[1:]:
+                common_sections &= set(sections.keys())
+            
+            # Calculate diversity per section
+            section_diversity = {}
+            for section_name in common_sections:
+                section_contents = [s[section_name] for s in all_sections]
+                section_similarities = []
+                
+                for i in range(len(section_contents)):
+                    for j in range(i + 1, len(section_contents)):
+                        sim = SequenceMatcher(None, section_contents[i], section_contents[j]).ratio()
+                        section_similarities.append(sim)
+                
+                if section_similarities:
+                    avg_sim = sum(section_similarities) / len(section_similarities)
+                    section_diversity[section_name] = 1 - avg_sim
+            
+            # Get top 3 most different sections
+            sorted_sections = sorted(section_diversity.items(), key=lambda x: x[1], reverse=True)
+            most_different_sections = [s[0] for s in sorted_sections[:3]]
+        except:
+            # If section extraction fails, continue without section-level analysis
+            pass
+        
+        # Interpretation
+        if diversity_score < 0.15:
+            interpretation = "very_similar"
+        elif diversity_score < 0.40:
+            interpretation = "moderate_diversity"
+        else:
+            interpretation = "high_diversity"
+        
+        return {
+            "diversity_score": diversity_score,
+            "similarity_matrix": similarity_matrix,
+            "most_different_sections": most_different_sections,
+            "interpretation": interpretation
+        }
+
 
     def elaborate(self, selection: str, query: str, full_context: str = "", history: List[Dict[str, str]] = None) -> Dict:
         """Elaborate on a selected text based on user query"""
@@ -1050,7 +1505,24 @@ SPECIAL RULES & ANALYTICAL NUANCES:
 </critical_prohibitions>
 
 <output_structure>
-Follow EXACTLY these 9 sections. Cannot be added or reduced:
+**CRITICAL: USE THESE EXACT SECTION HEADERS**
+You MUST use these EXACT section headers (copy-paste them exactly as shown):
+- ## 1. EXECUTIVE ANALYTICAL BRIEF (Core Summary)
+- ## 2. CORE THESIS & KEY ARGUMENTS (Key Points)
+- ## 3. CONCEPTUAL ARCHITECTURE (Topic Structure)
+- ## 4. GLOSSARY OF DENSITY (Technical Concepts & Terms)
+- ## 5. REASONING BLUEPRINT (Logic Framework)
+- ## 6. ACTIONABLE INTELLIGENCE & IMPLICATIONS
+- ## 7. REPRESENTATIVE SYNTHESIS (Iconic Quote)
+- ## 8. COMPARATIVE POSITIONING
+- ## 9. IMPLEMENTATION ROADMAP
+- ## 10. CRITICAL EVALUATION & LIMITATIONS
+
+DO NOT translate, modify, or paraphrase these headers.
+DO NOT use Indonesian translations like "GLOSARIUM DENSITAS" or "BLUEPRINT PENALARAN".
+Use the ENGLISH headers exactly as shown above.
+
+Follow EXACTLY these 10 sections. Cannot be added or reduced:
 
 **IMPORTANT NOTE ABOUT FORMAT**:
 - Separator lines (━━━) are only to help you understand structure in these instructions
@@ -1200,35 +1672,53 @@ DON'T:
 
 ---
 
-## 8. WORK CLASSIFICATION (Abstraction Level)
+---
 
-**Work Type**: [Choose most appropriate]
-- Theoretical-Conceptual (building new frameworks)
-- Empirical-Quantitative (data-driven research)
-- Empirical-Qualitative (case studies, ethnography)
-- Methodological (how-to, practical guide)
-- Meta-Analytical (literature review, synthesis)
-- Polemic-Argumentative (advocacy, critique)
+## 8. COMPARATIVE POSITIONING
 
-**Abstraction Level**: [Spectrum 1-5]
-1 = Highly practical (step-by-step guides)
-3 = Balanced (theory + application)
-5 = Highly abstract (pure philosophy/theory)
+Evaluate the book's position relative to the domain's landscape:
+- **Direct Competitors**: Contrast with 1-2 other seminal works or authors.
+- **Unique Selling Proposition (USP)**: What is the specific value not found elsewhere?
+- **Intellectual Heritage**: Which school of thought does it build upon or challenge?
 
-**Target Audience**: [Primary and secondary]
-Example: Academics (primary), experienced practitioners (secondary)
-
-**Knowledge Prerequisites**: [What should readers already know?]
+EXAMPLE:
+"Unlike Sinek's 'Start with Why' (broad inspiration), this work provides granular operational metrics. It challenges the 'Lean Startup' consensus by advocating for deep-tech investment before market validation. Philosophically, it aligns with Neo-Institutionalism while diverging on agency theory."
 
 ---
 
-## 9. ULTRAPURE ESSENCE (TL;DR)
+## 9. IMPLEMENTATION ROADMAP
 
-MAXIMUM 100-word distillation capturing:
-- Core thesis (1 sentence)
-- Key mechanism/method (1 sentence)
-- Main takeaway (1 sentence)
-- Significance/contribution (1 sentence)
+A 3-stage tactical application plan derived from the book:
+
+**Phase 1: Diagnosis & Baseline (Weeks 1-4)**
+[Actionable steps to assess current state using book's framework]
+
+**Phase 2: Core Intervention (Month 2-6)**
+[Main implementation steps and milestones]
+
+**Phase 3: Sustainability & Optimization (Ongoing)**
+[How to maintain gains and iterate]
+
+CRITERIA:
+- Must be practical, not "continue learning"
+- Based on the book's specific methodology
+
+---
+
+## 10. CRITICAL EVALUATION & LIMITATIONS
+
+A rigorous academic critique (not a "review"):
+- **Analytical Gaps**: What specific scenarios or variables were ignored?
+- **Methodological Constraints**: Sample size issues, geographical bias, or time-period limitations.
+- **Logical Critical Points**: Identify any potential fallacies or circular reasonings.
+
+EXAMPLE:
+"The dataset relies heavily on Western industrial contexts (1995-2015), potentially limiting applicability in emerging digital economies. Centrally, the 'Hyper-Efficiency' model assumes perfect information flow, an assumption often violated in decentralized organizational structures. Further research is needed on low-trust environments."
+
+DONT:
+- Only list "good points"
+- Be overly negative without evidence
+- Be vague (e.g., "The book is too long")
 
 STYLE: Telegraph style OK. Maximum density. No filler words.
 
@@ -1252,10 +1742,12 @@ Before submitting output, ensure:
 
 <linguistic_guidelines>
 INDONESIAN LANGUAGE:
-- Formal-academic, avoid colloquialism
-- Use foreign terms if more precise (OK not to translate)
-- Vary sentence structure (not monotonous)
-- Word economy: prefer "menggunakan" > "melakukan penggunaan terhadap"
+- **IMPORTANT**: Write all body content and analysis in **Bahasa Indonesia**.
+- Keep section headers (e.g., ## 1. EXECUTIVE ANALYTICAL BRIEF...) in **English** as specified in the <output_structure>.
+- Formal-academic tone, avoid colloquialism.
+- Use foreign terms if more precise (OK not to translate).
+- Vary sentence structure (not monotonous).
+- Word economy: prefer "menggunakan" > "melakukan penggunaan terhadap".
 
 COHESION:
 - Use transition devices: "Lebih lanjut...", "Sebaliknya...", "Berdasarkan hal ini..."
@@ -1284,7 +1776,7 @@ The summary was interrupted. Below is the content generated so far:
 6. 🚫 DO NOT repeat any content already provided above.
 
 **CONTINUATION LOGIC**:
-- If partial ends mid-Section 2 → complete Section 2, then continue to 3-9.
+- If partial ends mid-Section 2 → complete Section 2, then continue to 3-10.
 - If partial ends after Section 4 → start immediately from Section 5.
 - If partial ends mid-sentence → complete that specific sentence first.
 
