@@ -2,7 +2,8 @@
 Aplikasi yang berfungsi untuk mensintesis beragam konsep kunci hingga nilai aplikatif menggunakan bantuan AI.
 
 ## Fitur Utama
-- **Analytical Briefing Engine**: Menghasilkan analisis mendalam dengan struktur 9-bagian (Identitas, Sinopsis, Konsep Kunci, Analisis Kontekstual, hingga Applied Value), bukan sekadar ringkasan biasa.
+- **Analytical Briefing Engine**: Menghasilkan analisis mendalam dengan struktur **10-bagian** yang komprehensif (seperti *Conceptual Architecture*, *Implementation Roadmap*, hingga *Critical Evaluation*), memberikan kedalaman materi yang lebih baik.
+- **Section-by-Section Synthesis**: Metode yang memproses setiap bagian draf secara independen, menggabungkan wawasan terbaik dari berbagai draf, menormalisasi terminologi (Indonesia/Inggris), dan memiliki mekanisme pemulihan otomatis jika terjadi kegagalan.
 - **Book Verification**: Memverifikasi keberadaan buku melalui Google Books & OpenLibrary untuk mencegah halusinasi AI.
 - **Analytical Refining Mode**: Menghasilkan draf ringkasan awal secara paralel (level kedalaman 1-10 via **Draft Depth slider**) lalu melakukan tahap pemurnian (*refining*).
 - **Smart Resume**: Kemampuan melanjutkan proses perangkuman yang terputus tanpa harus mengulang dari awal.
