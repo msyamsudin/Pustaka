@@ -789,6 +789,10 @@ class BookSummarizer:
             section_metadata = {}
             total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             
+            # Initialize synthesis tracking metrics
+            unique_insights_count = 0
+            conflict_resolutions = 0
+            
             total_sections = len(all_section_names)
             for i, section_name in enumerate(sorted(all_section_names)):
                 # Yield progress for sections
@@ -942,6 +946,8 @@ class BookSummarizer:
             
             yield {
                 "content": final_content,
+                "done": True,
+                "progress": 100,
                 "usage": total_usage,
                 "model": self.model_name,
                 "provider": self.provider,

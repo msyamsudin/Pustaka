@@ -239,15 +239,13 @@ def synthesize_summaries(req: SynthesisRequest):
             
             # Prepare data to yield
             yield_data = {**update}
-            if "content" in yield_data and "done" not in yield_data:
-                # If we have final content but it's not marked done yet, we can mark it
-                # though summarize_synthesize usually sends content in the last chunk
-                if "progress" in yield_data and yield_data["progress"] == 100:
-                    yield_data["done"] = True
-                    yield_data["source_models"] = source_models
-                    yield_data["source_summary_ids"] = req.summary_ids
-                    yield_data["source_draft_count"] = len(drafts)
-                    yield_data["diversity_analysis"] = diversity_analysis
+            
+            # If this is the final chunk with done flag, add additional metadata
+            if "done" in yield_data and yield_data["done"]:
+                yield_data["source_models"] = source_models
+                yield_data["source_summary_ids"] = req.summary_ids
+                yield_data["source_draft_count"] = len(drafts)
+                yield_data["diversity_analysis"] = diversity_analysis
             
             yield f"data: {json.dumps(yield_data)}\n\n"
             
