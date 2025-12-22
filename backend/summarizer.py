@@ -770,19 +770,9 @@ class BookSummarizer:
                 sections = self._extract_sections(draft)
                 all_sections.append(sections)
             
-            # CRITICAL FIX: Use UNION of all sections, not intersection
-            # This ensures we process ALL sections from ALL drafts
-            all_section_names = set()
-            for sections in all_sections:
-                all_section_names.update(sections.keys())
-            
-            # If no sections found at all, fall back to whole-document synthesis
-            if not all_section_names:
-                yield {"status": "Analysis failed to identify discrete sections. Falling back to technical synthesis...", "progress": 15}
-                # Call fallback and yield its results
-                fallback_result = self._synthesize_whole_document(title, author, genre, year, drafts, start_time)
-                yield {**fallback_result, "progress": 100, "done": True}
-                return
+            # CRITICAL: Enforce STANDARD_SECTIONS for consistency across all AI models
+            # Always synthesize exactly these 10 sections, regardless of what drafts contain
+            all_section_names = STANDARD_SECTIONS
             
             # Synthesize each section independently
             synthesized_sections = {}
@@ -794,19 +784,29 @@ class BookSummarizer:
             conflict_resolutions = 0
             
             total_sections = len(all_section_names)
-            for i, section_name in enumerate(sorted(all_section_names)):
+            for i, section_name in enumerate(all_section_names):
                 # Yield progress for sections
                 prog = 10 + int((i / total_sections) * 80)
                 yield {"status": f"Synthesizing section: {section_name}...", "progress": prog}
-                # Extract this section from drafts that have it
+                
+                # Extract this section from drafts using both exact and normalized matching
                 section_contents = []
                 for sections in all_sections:
+                    # Try exact match first
                     if section_name in sections:
                         section_contents.append(sections[section_name])
+                    else:
+                        # Try normalized matching for variations (Indonesian/English, etc.)
+                        normalized_target = self._normalize_section_name(section_name)
+                        for draft_section_name, draft_content in sections.items():
+                            if self._normalize_section_name(draft_section_name) == normalized_target:
+                                section_contents.append(draft_content)
+                                break
                 
-                # Skip if no content (shouldn't happen, but safety check)
+                # If no draft has this section, use full drafts as context to generate it
                 if not section_contents:
-                    continue
+                    section_contents = drafts  # Use full drafts as fallback context
+                    section_metadata[section_name] = "generated_from_full_context"
                 
                 # If only one draft has this section, use it directly without synthesis
                 if len(section_contents) == 1:
@@ -1018,11 +1018,53 @@ class BookSummarizer:
                                          title: str, author: str, genre: str, year: str, draft_count: int) -> str:
         """Create prompt for synthesizing a specific section"""
         
-        # Format section contents
-        formatted_contents = "\n\n".join([
-            f"═══ DRAFT {i+1} - {section_name} ═══\n{content}"
-            for i, content in enumerate(section_contents)
-        ])
+        # Detect if we're working with full drafts (missing section scenario) or actual section contents
+        # Full drafts are much longer and contain multiple sections
+        is_full_drafts = any(len(content) > 2000 for content in section_contents)
+        
+        if is_full_drafts:
+            # Missing section scenario: generate from full draft context
+            formatted_contents = "\n\n".join([
+                f"═══ FULL DRAFT {i+1} ═══\n{content[:3000]}..."  # Truncate for context
+                for i, content in enumerate(section_contents)
+            ])
+            
+            return f"""<section_generation_task>
+You are generating the MISSING "{section_name}" section for an intelligence brief.
+
+BOOK CONTEXT:
+📚 "{title}" by {author} ({year}, {genre})
+
+AVAILABLE CONTEXT (Full Drafts):
+{formatted_contents}
+
+TASK:
+The "{section_name}" section was not found in any of the {draft_count} drafts above.
+Generate this section based on the overall content and themes present in the drafts.
+
+GENERATION INSTRUCTIONS:
+1. Analyze the full drafts to understand the book's core themes and arguments
+2. Create content appropriate for the "{section_name}" section
+3. Maintain consistency with the information present in the drafts
+4. Follow the standard format and requirements for this section type
+5. Use `[[number]]` syntax for any synthesized quantitative data
+
+OUTPUT REQUIREMENTS:
+- LANGUAGE: Write the content in **Indonesian (Bahasa Indonesia)** using a formal-academic tone.
+- Generate ONLY the content for "{section_name}".
+- Do not include the header in your response, as it will be added automatically.
+- No meta-commentary about the section being missing
+- Maintain appropriate section format (prose or bullet points as needed)
+
+Begin generation:
+</section_generation_task>"""
+        
+        else:
+            # Normal synthesis scenario: merge multiple section versions
+            formatted_contents = "\n\n".join([
+                f"═══ DRAFT {i+1} - {section_name} ═══\n{content}"
+                for i, content in enumerate(section_contents)
+            ])
         
         return f"""<section_synthesis_task>
 You are synthesizing ONLY the "{section_name}" section from {draft_count} intelligence brief drafts.
@@ -1531,6 +1573,30 @@ SPECIAL RULES & ANALYTICAL NUANCES:
 4. DO NOT use double brackets for static facts like publication year, names, or numbers explicitly stated in book metadata.
 </data_precision_policy>
 
+<genre_specific_guidelines>
+GENRE-AWARE CONTENT STRATEGY:
+
+For EMPIRICAL/SCIENTIFIC works (research studies, data analysis, experiments):
+- Prioritize quantitative evidence (percentages, sample sizes, statistical significance)
+- Use `[[...]]` syntax for synthesized numerical estimates
+- Focus on methodology, findings, and measurable outcomes
+
+For THEORETICAL/PHILOSOPHICAL works (philosophy, critical theory, methodology, political theory):
+- Focus on CONCEPTUAL PRECISION over quantitative data
+- Emphasize logical relationships, dialectical structures, and argumentative frameworks
+- Use examples from the author's own reasoning and thought experiments
+- Highlight conceptual distinctions and intellectual genealogy
+- DO NOT fabricate statistics or force numerical data where none exists in the original work
+- Instead of numbers, provide: key conceptual oppositions, logical structures, or paradigm shifts
+
+For PRACTICAL/BUSINESS works (management, self-help, how-to guides):
+- Balance between frameworks and actionable steps
+- Include case studies and real-world examples when available
+- Focus on implementation strategies and decision-making tools
+
+**CRITICAL**: Match your analytical approach to the book's inherent nature. A philosophical treatise like "Madilog" or "Being and Time" should NOT have fabricated percentages or sample sizes.
+</genre_specific_guidelines>
+
 <critical_prohibitions>
 🚫 STRICTLY FORBIDDEN:
 1. Generic opening/closing sentences ("This book discusses...", "Overall...")
@@ -1603,11 +1669,14 @@ FORMAT:
 BAD EXAMPLE:
 • The importance of data analysis
 
-GOOD EXAMPLE:
+GOOD EXAMPLE (Empirical Work):
 • **Data visualization reduces cognitive load by 43% compared to numeric tables**: Eye-tracking experiments (n=312) show that decision time for comparison tasks decreased by an average of 8.2 seconds using heatmaps vs spreadsheets → Recommendation: prioritize visual dashboards for executive reporting
 
+GOOD EXAMPLE (Theoretical/Philosophical Work):
+• **Dialektika sebagai metode sintesis kontradiksi**: Penulis mengargumentasikan bahwa pemikiran dialektis memungkinkan resolusi antara tesis dan antitesis melalui sintesis yang lebih tinggi, berbeda dari logika formal yang menolak kontradiksi → Implikasi: analisis sosial memerlukan pemahaman dinamika kontradiktif, bukan reduksi ke proposisi biner
+
 QUALITY CRITERIA:
-- Contains concrete numbers/data (percentages, sample sizes, timeframes)
+- Prioritizes concrete evidence when available (numbers for empirical works, conceptual precision for theoretical works)
 - Has practical or theoretical implications
 - Not common knowledge or truisms
 - Specific, not abstract
