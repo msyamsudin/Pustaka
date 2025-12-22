@@ -229,17 +229,27 @@ def synthesize_summaries(req: SynthesisRequest):
     # Calculate diversity analysis before synthesis
     diversity_analysis = summarizer._calculate_draft_diversity(drafts)
     
-    # Perform section-by-section synthesis
-    result = summarizer.summarize_synthesize(title, author, genre, year, drafts, diversity_analysis=diversity_analysis)
-    
-    # Add source tracking metadata
-    result['source_summary_ids'] = req.summary_ids
-    result['source_draft_count'] = len(drafts)
-    result['diversity_analysis'] = diversity_analysis
+    # Perform streaming synthesis
     
     def event_generator():
-        yield f"data: {json.dumps({'content': result.get('content', '')})}\n\n"
-        yield f"data: {json.dumps({'done': True, 'source_models': source_models, **{k:v for k,v in result.items() if k != 'content'}})}\n\n"
+        for update in summarizer.summarize_synthesize(title, author, genre, year, drafts, diversity_analysis=diversity_analysis):
+            if "error" in update:
+                yield f"data: {json.dumps(update)}\n\n"
+                break
+            
+            # Prepare data to yield
+            yield_data = {**update}
+            if "content" in yield_data and "done" not in yield_data:
+                # If we have final content but it's not marked done yet, we can mark it
+                # though summarize_synthesize usually sends content in the last chunk
+                if "progress" in yield_data and yield_data["progress"] == 100:
+                    yield_data["done"] = True
+                    yield_data["source_models"] = source_models
+                    yield_data["source_summary_ids"] = req.summary_ids
+                    yield_data["source_draft_count"] = len(drafts)
+                    yield_data["diversity_analysis"] = diversity_analysis
+            
+            yield f"data: {json.dumps(yield_data)}\n\n"
             
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

@@ -251,6 +251,8 @@ class BookSummarizer:
             yield f"data: {json.dumps({'error': 'Generated prompt is too short or empty'})}\n\n"
             return
 
+        yield f"data: {json.dumps({'status': 'Connecting to intelligence grid...'})}\n\n"
+
         try:
             start_time = time.time()
             
@@ -319,7 +321,6 @@ class BookSummarizer:
         
         try:
             response = requests.post(url, json=payload, stream=True, timeout=self.timeout)
-            
             if response.status_code != 200:
                 yield f"data: {json.dumps({'error': f'Ollama error: {response.text}'})}\n\n"
                 return
@@ -733,14 +734,17 @@ class BookSummarizer:
                 "usage": usage_total
             }
 
-    def summarize_synthesize(self, title: str, author: str, genre: str, year: str, drafts: List[str], diversity_analysis: Dict = None) -> Dict:
+    def summarize_synthesize(self, title: str, author: str, genre: str, year: str, drafts: List[str], diversity_analysis: Dict = None) -> Generator[Dict, None, None]:
         """Synthesize multiple drafts into a final summary using section-by-section approach"""
         if not drafts:
-            return {"error": "No drafts provided for synthesis"}
+            yield {"error": "No drafts provided for synthesis"}
+            return
         
         # Calculate diversity if not provided
         if not diversity_analysis:
             diversity_analysis = self._calculate_draft_diversity(drafts)
+        
+        yield {"status": "Analyzing draft architecture...", "progress": 5}
         
         # Standard section names in intelligence brief
         STANDARD_SECTIONS = [
@@ -774,14 +778,22 @@ class BookSummarizer:
             
             # If no sections found at all, fall back to whole-document synthesis
             if not all_section_names:
-                return self._synthesize_whole_document(title, author, genre, year, drafts, start_time)
+                yield {"status": "Analysis failed to identify discrete sections. Falling back to technical synthesis...", "progress": 15}
+                # Call fallback and yield its results
+                fallback_result = self._synthesize_whole_document(title, author, genre, year, drafts, start_time)
+                yield {**fallback_result, "progress": 100, "done": True}
+                return
             
             # Synthesize each section independently
             synthesized_sections = {}
             section_metadata = {}
             total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             
+            total_sections = len(all_section_names)
             for i, section_name in enumerate(sorted(all_section_names)):
+                # Yield progress for sections
+                prog = 10 + int((i / total_sections) * 80)
+                yield {"status": f"Synthesizing section: {section_name}...", "progress": prog}
                 # Extract this section from drafts that have it
                 section_contents = []
                 for sections in all_sections:
@@ -897,30 +909,38 @@ class BookSummarizer:
             
             # Fallback: Add any synthesized sections that weren't matched
             # This ensures no synthesized content is lost
-            matched_sections_set = set()
-            for part in final_content_parts:
-                if part.startswith("## "):
-                    # Extract section name from "## 1. SECTION NAME"
-                    section_name = part.split(". ", 1)[1] if ". " in part else ""
-                    matched_sections_set.add(section_name)
-            
-            for synth_section in synthesized_sections.keys():
-                if synth_section not in matched_sections_set:
-                    final_content_parts.append(f"## {section_counter}. {synth_section}")
-                    final_content_parts.append(synthesized_sections[synth_section])
+            for section_name, content in synthesized_sections.items():
+                # Check if the section_name (or a normalized version) has already been added
+                # This check is more robust than the previous one
+                already_added = False
+                for part in final_content_parts:
+                    if part.startswith("## "):
+                        # Extract section name from "## 1. SECTION NAME"
+                        added_section_name = part.split(". ", 1)[1] if ". " in part else ""
+                        if self._normalize_section_name(added_section_name) == self._normalize_section_name(section_name):
+                            already_added = True
+                            break
+                
+                if not already_added:
+                    final_content_parts.append(f"## {section_counter}. {section_name}")
+                    final_content_parts.append(content)
                     final_content_parts.append("")
                     section_counter += 1
             
+            # FINAL SAFETY CHECK: If reconstructed content is too short, use a raw fallback
             final_content = "\n".join(final_content_parts).strip()
+            if len(final_content) < 500 and len(drafts) > 0:
+                print(f"⚠️ Synthesis produced suspiciously short content ({len(final_content)} chars). Using raw merge fallback.")
+                fallback_parts = [f"# SYNTHETIC CONSOLIDATION (RESCUE MODE)\n"]
+                for i, draft in enumerate(drafts):
+                    fallback_parts.append(f"### VERSION {i+1} SOURCE\n{draft}\n")
+                final_content = "\n".join(fallback_parts)
+
+            yield {"status": "Finalizing analytical brief...", "progress": 95}
             
-            end_time = time.time()
-            duration = round(end_time - start_time, 2)
+            duration = round(time.time() - start_time, 2)
             
-            # Calculate synthesis transparency metrics
-            unique_insights_count = len([v for v in section_metadata.values() if v == "merged"])
-            conflict_resolutions = len([v for v in section_metadata.values() if "dominant" in v])
-            
-            return {
+            yield {
                 "content": final_content,
                 "usage": total_usage,
                 "model": self.model_name,
@@ -1134,8 +1154,9 @@ Begin synthesis:
         """Extract sections from intelligence brief based on markdown headers"""
         import re
         
-        # Standard section headers (## 1. SECTION NAME)
-        section_pattern = r'^##\s+\d+\.\s+(.+?)$'
+        # Permissive section headers (## 1. NAME or ##NAME or ### NAME)
+        # Supports various spacing and levels (though we favor ##)
+        section_pattern = r'^#{2,3}\s*(?:\d+[\.\)]\s*)?(.+?)$'
         
         sections = {}
         current_section = None
@@ -1157,8 +1178,8 @@ Begin synthesis:
             elif current_section:
                 current_content.append(line)
         
-        # Save last section
-        if current_section:
+        # Save last section! (CRITICAL FIX)
+        if current_section and current_content:
             sections[current_section] = '\n'.join(current_content).strip()
         
         return sections
@@ -1440,7 +1461,7 @@ PROCESS:
    - **IMPORTANT**: Use `[[number]]` syntax for all quantitative data derived from your analytical synthesis.
 
 OUTPUT:
-Generate ONLY the final brief in standard format (9 sections).
+Generate ONLY the final brief in standard format (10 sections).
 DO NOT include:
 - Individual draft scoring
 - Selection justification
@@ -1733,7 +1754,7 @@ Before submitting output, ensure:
 ☑ At least 5 concrete data points (numbers, years, percentages)
 ☑ Every technical term used with precision
 ☑ No redundancy between sections
-☑ All 9 sections complete (none skipped)
+☑ All 10 sections complete (none skipped)
 ☑ Using `[[...]]` syntax for synthesized numbers (minimum 3 points)
 ☑ Consistent markdown formatting
 ☑ Total length 900-1300 words

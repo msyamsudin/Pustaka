@@ -1335,6 +1335,13 @@ function App() {
             try {
               const data = JSON.parse(line.slice(6));
               if (data.error) throw new Error(data.error);
+              if (data.status) {
+                setStreamingStatus(data.status);
+              }
+
+              if (data.progress) {
+                setProgress(data.progress);
+              }
 
               if (data.content) {
                 accumulatedSummary += data.content;
@@ -2396,7 +2403,31 @@ function App() {
 
         {/* Summary Result */}
         {summary && !showSettings && (
-          <div className="glass-card animate-slide-up summary-card">
+          <div className="glass-card animate-slide-up summary-card" style={{ position: 'relative' }}>
+            {/* Real-time Progress Bar */}
+            {summarizing && progress > 0 && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                height: '4px',
+                width: '100%',
+                background: 'rgba(255,255,255,0.08)',
+                zIndex: 100,
+                borderTopLeftRadius: '8px',
+                borderTopRightRadius: '8px',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${progress}%`,
+                  background: 'linear-gradient(90deg, var(--accent-color), #60a5fa)',
+                  boxShadow: '0 0 10px var(--accent-color)',
+                  transition: 'width 0.4s ease-out'
+                }}></div>
+              </div>
+            )}
+
             {/* Version Switcher if multiple versions available */}
             {currentBook && currentBook.summaries && currentBook.summaries.length > 1 && (
               <div style={{ marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
@@ -2669,8 +2700,14 @@ function App() {
               {summarizing && summary && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>
                   <div className="spinner" style={{ width: '16px', height: '16px' }}></div>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{streamingStatus}</span>
-
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{streamingStatus}</span>
+                    {progress > 0 && (
+                      <span style={{ fontSize: '0.65rem', color: 'var(--accent-color)', fontWeight: 'bold' }}>
+                        PHASE PROGRESS: {progress}%
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
