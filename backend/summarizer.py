@@ -1376,17 +1376,28 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
     ) -> str:
         """Generate the full prompt based on mode"""
         
-        # Validate inputs to prevent empty prompts
-        if not title or not author:
-            raise BookSummarizerError("Title and author are required for prompt generation")
-        
         # Sanitize all inputs
-        title = str(title).strip() or "Unknown Title"
-        author = str(author).strip() or "Unknown Author"
+        title = str(title).strip() if title else ""
+        author = str(author).strip() if author else ""
         genre = str(genre).strip() if genre else "Unknown"
         year = str(year).strip() if year else "Unknown"
         context_description = str(context_description).strip() if context_description else ""
         source_note = str(source_note).strip() if source_note else "knowledge about this book"
+        
+        # Validate critical fields with informative error messages
+        missing_fields = []
+        if not title:
+            missing_fields.append("title")
+        if not author:
+            missing_fields.append("author")
+        
+        if missing_fields:
+            fields_str = " and ".join(missing_fields)
+            raise BookSummarizerError(
+                f"Missing required metadata: {fields_str}. "
+                f"The verification source did not provide complete book information. "
+                f"Please try verifying with different search terms or check if the book exists in multiple sources."
+            )
         
         if mode == "judge" and drafts:
             # Validate drafts
