@@ -191,9 +191,10 @@ class BookSummarizer:
             usage = completion.usage
             raw_content = completion.choices[0].message.content
             cleaned_content = self._clean_output(raw_content)
+            normalized_content = self._normalize_output_format(cleaned_content)
             
             return {
-                "content": cleaned_content,
+                "content": normalized_content,
                 "usage": {
                     "prompt_tokens": usage.prompt_tokens,
                     "completion_tokens": usage.completion_tokens,
@@ -789,19 +790,89 @@ class BookSummarizer:
                 prog = 10 + int((i / total_sections) * 80)
                 yield {"status": f"Synthesizing section: {section_name}...", "progress": prog}
                 
-                # Extract this section from drafts using both exact and normalized matching
+                # Extract this section from drafts using multiple matching strategies
                 section_contents = []
-                for sections in all_sections:
-                    # Try exact match first
+                section_sources = []  # Track which draft each content came from
+                
+                for draft_idx, sections in enumerate(all_sections):
+                    matched_content = None
+                    match_method = None
+                    
+                    print(f"\n🔍 Attempting to match '{section_name}' in draft {draft_idx+1}...")
+                    print(f"   Available sections in draft {draft_idx+1}: {list(sections.keys())}")
+                    
+                    # Strategy 1: Exact match
                     if section_name in sections:
-                        section_contents.append(sections[section_name])
+                        matched_content = sections[section_name]
+                        match_method = "exact"
+                        print(f"   ✓ Exact match found!")
                     else:
-                        # Try normalized matching for variations (Indonesian/English, etc.)
+                        # Strategy 2: Normalized matching
                         normalized_target = self._normalize_section_name(section_name)
+                        print(f"   Normalized target: '{normalized_target}'")
+                        
+                        # Try to find best match using multiple strategies
+                        best_match_score = 0.0
+                        best_match_content = None
+                        best_match_name = None
+                        
                         for draft_section_name, draft_content in sections.items():
-                            if self._normalize_section_name(draft_section_name) == normalized_target:
-                                section_contents.append(draft_content)
+                            normalized_draft = self._normalize_section_name(draft_section_name)
+                            
+                            # Exact normalized match
+                            if normalized_draft == normalized_target:
+                                matched_content = draft_content
+                                match_method = "normalized_exact"
+                                print(f"   ✓ Normalized exact match: '{draft_section_name}'")
                                 break
+                            
+                            # Partial substring matching (helps with variations like "CORE THESIS" vs "CORE THESIS & KEY ARGUMENTS")
+                            target_base = normalized_target.split('(')[0].strip()
+                            draft_base = normalized_draft.split('(')[0].strip()
+                            
+                            # Check if main part matches (ignoring parenthetical descriptions)
+                            if target_base in draft_base or draft_base in target_base:
+                                # Calculate similarity for this partial match
+                                from difflib import SequenceMatcher
+                                partial_similarity = SequenceMatcher(None, target_base, draft_base).ratio()
+                                if partial_similarity > best_match_score:
+                                    best_match_score = partial_similarity
+                                    best_match_content = draft_content
+                                    best_match_name = draft_section_name
+                                    print(f"   → Partial match candidate: '{draft_section_name}' (similarity: {partial_similarity:.2%})")
+                            
+                            # Fuzzy match with similarity scoring (full comparison)
+                            from difflib import SequenceMatcher
+                            similarity = SequenceMatcher(None, normalized_target, normalized_draft).ratio()
+                            
+                            if similarity > best_match_score:
+                                best_match_score = similarity
+                                best_match_content = draft_content
+                                best_match_name = draft_section_name
+                                print(f"   → Fuzzy match candidate: '{draft_section_name}' (similarity: {similarity:.2%})")
+                        
+                        # LOWERED THRESHOLD: Use fuzzy match if similarity is >= 50% (was 60%)
+                        # This makes matching more tolerant of variations between variants
+                        if not matched_content and best_match_score >= 0.5:
+                            matched_content = best_match_content
+                            match_method = f"fuzzy_{int(best_match_score*100)}%"
+                            print(f"   ✓ Accepted fuzzy match: '{best_match_name}' (similarity: {best_match_score:.2%})")
+                        elif not matched_content and best_match_name:
+                            print(f"   ✗ Best match '{best_match_name}' rejected (similarity {best_match_score:.2%} < 50% threshold)")
+                    
+                    if matched_content:
+                        section_contents.append(matched_content)
+                        section_sources.append(f"draft_{draft_idx+1}_{match_method}")
+                    else:
+                        print(f"   ✗ No match found in draft {draft_idx+1}")
+                
+                # Log matching summary
+                if len(section_contents) == 0:
+                    print(f"\n⚠️ Section '{section_name}' not found in any draft. Using full context fallback.")
+                elif len(section_contents) < len(drafts):
+                    print(f"\nℹ️ Section '{section_name}' found in {len(section_contents)}/{len(drafts)} drafts. Sources: {section_sources}")
+                else:
+                    print(f"\n✓ Section '{section_name}' found in all {len(drafts)} drafts.")
                 
                 # If no draft has this section, use full drafts as context to generate it
                 if not section_contents:
@@ -812,7 +883,9 @@ class BookSummarizer:
                 if len(section_contents) == 1:
                     synthesized_sections[section_name] = section_contents[0]
                     section_metadata[section_name] = "single_source"
+                    print(f"→ Using single source for '{section_name}'")
                     continue
+
                 
                 # Create section-specific synthesis prompt
                 section_prompt = self._create_section_synthesis_prompt(
@@ -1163,7 +1236,10 @@ Begin synthesis:
 
     
     def _normalize_section_name(self, section_name: str) -> str:
-        """Normalize section names to handle Indonesian/English variations"""
+        """Normalize section names to handle Indonesian/English variations with fuzzy matching"""
+        from difflib import SequenceMatcher
+        import re
+        
         # Mapping of Indonesian to English section names
         name_mappings = {
             "ESENSI ULTRAMURNI": "EXECUTIVE ANALYTICAL BRIEF",
@@ -1187,33 +1263,156 @@ Begin synthesis:
             "KUTIPAN IKONIK": "REPRESENTATIVE SYNTHESIS"
         }
         
-        # Extract base name (before parentheses)
-        base_name = section_name.split('(')[0].strip().upper()
+        # Helper function to clean and normalize text
+        def clean_text(text):
+            # Remove special characters except spaces and ampersands
+            text = re.sub(r'[^\w\s&]', '', text)
+            # Normalize whitespace
+            text = re.sub(r'\s+', ' ', text)
+            return text.strip().upper()
         
-        # Check if it matches any known mapping
+        # Extract base name (before parentheses) and clean it
+        base_name = section_name.split('(')[0].strip()
+        cleaned_base = clean_text(base_name)
+        
+        # Strategy 1: Exact match after cleaning
         for indo_name, eng_name in name_mappings.items():
-            if indo_name in base_name or base_name in indo_name:
+            cleaned_indo = clean_text(indo_name)
+            cleaned_eng = clean_text(eng_name)
+            
+            if cleaned_base == cleaned_indo or cleaned_base == cleaned_eng:
                 return eng_name
         
-        # If already in English or unknown, return as is
-        return base_name
+        # Strategy 2: Substring match (bidirectional)
+        for indo_name, eng_name in name_mappings.items():
+            cleaned_indo = clean_text(indo_name)
+            cleaned_eng = clean_text(eng_name)
+            
+            if cleaned_indo in cleaned_base or cleaned_base in cleaned_indo:
+                return eng_name
+            if cleaned_eng in cleaned_base or cleaned_base in cleaned_eng:
+                return eng_name
+        
+        # Strategy 3: Fuzzy matching with similarity threshold
+        best_match = None
+        best_score = 0.0
+        SIMILARITY_THRESHOLD = 0.7  # 70% similarity required
+        
+        # Check against all known section names (both Indonesian and English)
+        all_known_names = list(name_mappings.keys()) + list(name_mappings.values())
+        
+        for known_name in all_known_names:
+            cleaned_known = clean_text(known_name)
+            similarity = SequenceMatcher(None, cleaned_base, cleaned_known).ratio()
+            
+            if similarity > best_score:
+                best_score = similarity
+                best_match = known_name
+        
+        # If we found a good match, return the standardized English name
+        if best_score >= SIMILARITY_THRESHOLD and best_match:
+            # If the match is Indonesian, return its English equivalent
+            if best_match in name_mappings:
+                return name_mappings[best_match]
+            # If the match is already English, return it
+            return best_match
+        
+        # Strategy 4: Keyword-based matching for common terms
+        keyword_mappings = {
+            "EXECUTIVE ANALYTICAL BRIEF": ["executive", "analytical", "brief", "ringkasan", "esensi"],
+            "CORE THESIS & KEY ARGUMENTS": ["thesis", "tesis", "argument", "argumen", "key", "kunci"],
+            "CONCEPTUAL ARCHITECTURE": ["conceptual", "architecture", "arsitektur", "konseptual"],
+            "GLOSSARY OF DENSITY": ["glossary", "glosarium", "density", "densitas", "kamus", "istilah"],
+            "REASONING BLUEPRINT": ["reasoning", "blueprint", "penalaran", "kerangka", "logika"],
+            "ACTIONABLE INTELLIGENCE & IMPLICATIONS": ["actionable", "intelligence", "intelijen", "implikasi", "implications"],
+            "REPRESENTATIVE SYNTHESIS": ["representative", "synthesis", "sintesis", "kutipan", "quote"],
+            "COMPARATIVE POSITIONING": ["comparative", "positioning", "komparatif", "posisi", "perbandingan"],
+            "IMPLEMENTATION ROADMAP": ["implementation", "roadmap", "implementasi", "peta jalan"],
+            "CRITICAL EVALUATION & LIMITATIONS": ["critical", "evaluation", "evaluasi", "kritis", "limitations", "keterbatasan"]
+        }
+        
+        cleaned_lower = cleaned_base.lower()
+        for standard_name, keywords in keyword_mappings.items():
+            matches = sum(1 for kw in keywords if kw.lower() in cleaned_lower)
+            # If at least 2 keywords match, consider it a match
+            if matches >= 2:
+                return standard_name
+        
+        # If no match found, return the cleaned base name
+        return cleaned_base
     
     def _extract_sections(self, content: str) -> Dict[str, str]:
-        """Extract sections from intelligence brief based on markdown headers"""
+        """Extract sections from intelligence brief based on markdown headers or numbered lists"""
         import re
         
-        # Permissive section headers (## 1. NAME or ##NAME or ### NAME)
-        # Supports various spacing and levels (though we favor ##)
-        section_pattern = r'^#{2,3}\s*(?:\d+[\.\)]\s*)?(.+?)$'
+        print(f"\n🔍 Starting section extraction from {len(content)} characters...")
+        print(f"   First 200 chars: {content[:200]}")
+        
+        # Pattern 1: Markdown headers (## 1. NAME or ### NAME)
+        markdown_pattern = r'^#{2,3}\s*(?:\d+[\.\)]\s*)?(.+?)$'
+        
+        # Pattern 2: Plain numbered list at start of line (1. NAME or 1) NAME)
+        # More permissive: accepts any text that starts with uppercase after number
+        numbered_pattern = r'^\d+[\.\)]\s+([A-Z].{8,})$'  # Lowered from 10 to 8 chars
+        
+        # Pattern 3: Bold markdown section headers (**NAME** or **1. NAME**)
+        bold_pattern = r'^\*\*\s*(?:\d+[\.\)]\s*)?(.+?)\s*\*\*$'
+        
+        # Pattern 4: ALL CAPS lines (minimum 10 chars, mostly uppercase)
+        caps_pattern = r'^([A-Z][A-Z\s&\-\(\)]{9,})$'
         
         sections = {}
         current_section = None
         current_content = []
         
         lines = content.split('\n')
+        matched_lines = 0
         
-        for line in lines:
-            match = re.match(section_pattern, line.strip())
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            match = None
+            pattern_used = None
+            
+            # Skip empty lines
+            if not stripped:
+                if current_section:
+                    current_content.append(line)
+                continue
+            
+            # Try markdown pattern first
+            match = re.match(markdown_pattern, stripped)
+            if match:
+                pattern_used = "markdown"
+            
+            # Try bold pattern
+            if not match:
+                match = re.match(bold_pattern, stripped)
+                if match:
+                    pattern_used = "bold"
+            
+            # Try numbered list pattern
+            if not match:
+                match = re.match(numbered_pattern, stripped)
+                if match:
+                    pattern_used = "numbered"
+            
+            # Try ALL CAPS pattern (most permissive, use cautiously)
+            if not match and len(stripped) >= 10:
+                match = re.match(caps_pattern, stripped)
+                if match:
+                    # Additional validation: check if it looks like a section title
+                    potential_title = match.group(1).strip()
+                    # Must contain at least one word from standard sections
+                    section_keywords = ['EXECUTIVE', 'ANALYTICAL', 'BRIEF', 'CORE', 'THESIS', 'KEY', 'ARGUMENTS',
+                                       'CONCEPTUAL', 'ARCHITECTURE', 'GLOSSARY', 'DENSITY','REASONING', 'BLUEPRINT',
+                                       'ACTIONABLE', 'INTELLIGENCE', 'IMPLICATIONS', 'REPRESENTATIVE', 'SYNTHESIS',
+                                       'COMPARATIVE', 'POSITIONING', 'IMPLEMENTATION', 'ROADMAP', 'CRITICAL',
+                                       'EVALUATION', 'LIMITATIONS']
+                    if any(kw in potential_title.upper() for kw in section_keywords):
+                        pattern_used = "all_caps"
+                    else:
+                        match = None
+            
             if match:
                 # Save previous section
                 if current_section:
@@ -1223,6 +1422,10 @@ Begin synthesis:
                 raw_section_name = match.group(1).strip()
                 current_section = self._normalize_section_name(raw_section_name)
                 current_content = []
+                matched_lines += 1
+                
+                # Log detected section for debugging
+                print(f"📋 Line {i+1} [{pattern_used}]: '{raw_section_name}' → normalized to '{current_section}'")
             elif current_section:
                 current_content.append(line)
         
@@ -1230,7 +1433,15 @@ Begin synthesis:
         if current_section and current_content:
             sections[current_section] = '\n'.join(current_content).strip()
         
+        # Log summary of extracted sections
+        print(f"📊 Extracted {len(sections)} sections from {matched_lines} matched lines: {list(sections.keys())}")
+        
+        if len(sections) == 0:
+            print(f"⚠️ WARNING: No sections extracted! Content may have unexpected format.")
+            print(f"   First 500 chars of content:\n{content[:500]}")
+        
         return sections
+
     
     def _calculate_draft_diversity(self, drafts: List[str]) -> Dict:
         """Calculate diversity metrics for drafts"""
@@ -1921,3 +2132,40 @@ START CONTINUATION NOW ↓
             text = re.sub(pattern, "", text, flags=re.IGNORECASE | re.MULTILINE)
 
         return text.strip()
+    
+    @staticmethod
+    def _normalize_output_format(text: str) -> str:
+        """Normalize output format to ensure consistency across all AI models
+        
+        Converts numbered lists to markdown headers with horizontal rules
+        to match the clean format produced by models like Kimi.
+        """
+        lines = text.split('\n')
+        normalized_lines = []
+        
+        # Pattern to match numbered section headers
+        # Matches: "1. EXECUTIVE ANALYTICAL BRIEF (Core Summary)"
+        section_header_pattern = r'^(\d+)[\.\)]\s+([A-Z].{10,})$'
+        
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            match = re.match(section_header_pattern, stripped)
+            
+            if match:
+                number = match.group(1)
+                section_title = match.group(2).strip()
+                
+                # Convert to markdown header format
+                normalized_lines.append(f"## {number}. {section_title}")
+                normalized_lines.append("")  # Empty line after header
+                normalized_lines.append("---")  # Horizontal rule
+                normalized_lines.append("")  # Empty line after rule
+            else:
+                # Keep the line as is
+                normalized_lines.append(line)
+        
+        # Join lines and clean up excessive newlines
+        result = '\n'.join(normalized_lines)
+        result = re.sub(r'\n{4,}', '\n\n\n', result)  # Max 3 newlines
+        
+        return result.strip()
