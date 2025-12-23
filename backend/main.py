@@ -132,6 +132,15 @@ class ElaborationRequest(BaseModel):
     provider: Optional[str] = "OpenRouter"
     base_url: Optional[str] = None
 
+class RefineRequest(BaseModel):
+    selection: str
+    instruction: str
+    context: Optional[str] = ""
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    provider: Optional[str] = "OpenRouter"
+    base_url: Optional[str] = None
+
 
 @app.post("/api/summarize")
 def summarize_book(req: SummarizationRequest):
@@ -274,6 +283,30 @@ def elaborate_text(req: ElaborationRequest):
     )
     
     return summarizer.elaborate(req.selection, req.query, req.context, req.history)
+
+
+@app.post("/api/refine")
+def refine_text(req: RefineRequest):
+    # Determine API Key & Provider from request or config
+    config = config_manager.load_config()
+    
+    provider = req.provider or config.get("provider", "OpenRouter")
+    api_key = req.api_key or (config.get("openrouter_key") if provider == "OpenRouter" else config.get("groq_key"))
+    model = req.model or (config.get("openrouter_model") if provider == "OpenRouter" else config.get("groq_model"))
+    base_url = req.base_url or config.get("ollama_base_url")
+
+    # If Ollama, model might be different
+    if provider == "Ollama":
+        model = req.model or config.get("ollama_model", "llama3")
+
+    summarizer = BookSummarizer(
+        api_key=api_key, 
+        model_name=model, 
+        provider=provider, 
+        base_url=base_url
+    )
+    
+    return summarizer.refine_content(req.selection, req.instruction, req.context)
 
 
 @app.post("/api/models")

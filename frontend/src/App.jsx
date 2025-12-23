@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus } from 'lucide-react';
+import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus, MessageSquarePlus } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
 
@@ -118,6 +118,57 @@ const SimpleModal = ({ isOpen, title, message, onClose, onConfirm, confirmText =
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+const RefineModal = ({ isOpen, onClose, onConfirm, isRefining, instruction, setInstruction, shouldSave, setShouldSave, hasSavedVersion }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="modal-overlay animate-fade-in" style={{ zIndex: 1200 }}>
+      {isRefining ? (
+        <div className="glass-card" style={{ width: '100%', maxWidth: '350px', padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.5rem' }}>
+          <div className="spinner" style={{ width: '40px', height: '40px', borderTopColor: 'var(--accent-color)' }}></div>
+          <div style={{ textAlign: 'center' }}>
+            <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', color: 'var(--text-primary)' }}>Sedang Menganalisis...</h3>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>AI sedang menulis ulang rangkuman Anda.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="glass-card" style={{ width: '100%', maxWidth: '500px', padding: '1.5rem' }}>
+          <h3 style={{ marginTop: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <MessageSquarePlus size={20} /> Masukan untuk Rangkuman
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem', fontSize: '0.9rem' }}>
+            Berikan instruksi untuk merevisi rangkuman ini secara keseluruhan.
+          </p>
+          <textarea
+            className="input-field"
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder="Contoh: Buat lebih ringkas, gaya bahasa lebih formal, tambahkan penekanan pada bagian X..."
+            style={{ width: '100%', minHeight: '100px', resize: 'vertical', marginBottom: '1rem' }}
+            autoFocus
+          />
+          {hasSavedVersion && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+              <input
+                type="checkbox"
+                checked={shouldSave}
+                onChange={(e) => setShouldSave(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <span>Perbarui rangkuman tersimpan</span>
+            </label>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+            <button onClick={onClose} className="btn-secondary" disabled={isRefining}>Batal</button>
+            <button onClick={onConfirm} className="btn-primary" disabled={isRefining || !instruction.trim()}>
+              {isRefining ? <span className="spinner"></span> : "Perbaiki"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -465,7 +516,14 @@ function App() {
   const [isElaborating, setIsElaborating] = useState(false);
   const [elaborationQuery, setElaborationQuery] = useState("");
   const [showElaborationPanel, setShowElaborationPanel] = useState(false);
+
   const [progress, setProgress] = useState(0);
+
+  // Refinement State
+  const [isRefineModalOpen, setIsRefineModalOpen] = useState(false);
+  const [refineInstruction, setRefineInstruction] = useState("");
+  const [isRefining, setIsRefining] = useState(false);
+  const [shouldSaveRefinement, setShouldSaveRefinement] = useState(false);
 
   // Note Review State
   const [isNoteReviewOpen, setIsNoteReviewOpen] = useState(false);
@@ -603,6 +661,62 @@ function App() {
       showAlert("Error", "Gagal melakukan elaborasi.");
     } finally {
       setIsElaborating(false);
+    }
+  };
+
+  const handleRefine = () => {
+    setRefineInstruction("");
+    setShouldSaveRefinement(!!savedId); // Default to true if already saved
+    setIsRefineModalOpen(true);
+  };
+
+  const submitRefinement = async () => {
+    if (!summary || !refineInstruction) return;
+    setIsRefining(true);
+    try {
+      const res = await axios.post(`${API_BASE_URL}/refine`, {
+        selection: summary, // Use full summary for global refinement
+        instruction: refineInstruction,
+        context: summary,
+        api_key: provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : null),
+        provider: provider,
+        model: provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel),
+        base_url: ollamaBaseUrl
+      });
+
+      if (res.data.error) {
+        showAlert("Error", res.data.error);
+      } else {
+        const newContent = res.data.content;
+        if (newContent) {
+          setSummary(newContent);
+
+          // Auto-save if checkbox was checked and summary is already saved
+          if (shouldSaveRefinement && savedId) {
+            try {
+              await axios.put(`${API_BASE_URL}/summaries/${savedId}`, {
+                summary: newContent,
+                notes: notes
+              });
+              showToast("Rangkuman diperbarui dan disimpan", "success");
+            } catch (saveErr) {
+              console.error("Save failed:", saveErr);
+              showToast("Rangkuman diperbarui (gagal menyimpan)", "warning");
+            }
+          } else {
+            showToast("Rangkuman berhasil diperbarui", "success");
+          }
+
+          setIsRefineModalOpen(false);
+          setSelectionContext(null); // Clear any selection
+          window.getSelection()?.removeAllRanges();
+        }
+      }
+    } catch (err) {
+      console.error("Refinement failed", err);
+      showAlert("Error", "Gagal memperbaiki teks.");
+    } finally {
+      setIsRefining(false);
     }
   };
 
@@ -2616,6 +2730,23 @@ function App() {
                   {!summarizing && summary && (
                     <>
                       <button
+                        onClick={handleRefine}
+                        className="btn-primary"
+                        title="Berikan Masukan"
+                        style={{
+                          padding: '0.35rem 0.7rem',
+                          marginLeft: '5px',
+                          marginTop: '2px',
+                          marginBottom: '2px',
+                          marginRight: '2px',
+                          backgroundColor: 'black',
+                          color: 'var(--bg-primary)',
+                          borderColor: 'grey'
+                        }}
+                      >
+                        <Edit3 size={14} style={{ marginRight: '6px' }} /> Feedback
+                      </button>
+                      <button
                         onClick={handleRegenerate}
                         className="btn-secondary"
                         title="Generate Ulang"
@@ -2624,7 +2755,7 @@ function App() {
                           marginLeft: '5px',
                           marginTop: '2px',
                           marginBottom: '2px',
-                          marginRight: '2px'
+                          marginRight: '2px',
                         }}
                       >
                         <RotateCcw size={14} />
@@ -3116,9 +3247,21 @@ function App() {
             >
               <Sparkles size={16} /> Tanya AI
             </button>
-          </div>
+          </div >
         )
       }
+
+      <RefineModal
+        isOpen={isRefineModalOpen}
+        onClose={() => setIsRefineModalOpen(false)}
+        onConfirm={submitRefinement}
+        isRefining={isRefining}
+        instruction={refineInstruction}
+        setInstruction={setRefineInstruction}
+        shouldSave={shouldSaveRefinement}
+        setShouldSave={setShouldSaveRefinement}
+        hasSavedVersion={!!savedId}
+      />
 
       {/* Elaboration Panel */}
       {

@@ -800,6 +800,77 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
         except Exception as e:
             return {"error": f"Elaboration failed: {str(e)}"}
 
+    def refine_content(self, selection: str, instruction: str, full_context: str = "") -> Dict:
+        """Refine specific text based on user instruction"""
+        if not selection or not instruction: 
+            return {"error": "Missing selection or instruction"}
+
+        # Sanitasi
+        selection = self._sanitize_input(selection, 20000) # Increased limit for full summary
+        instruction = self._sanitize_input(instruction, 500)
+        full_context = self._sanitize_input(full_context, 20000) if full_context else ""
+
+        is_full_rewrite = len(selection) > len(full_context) * 0.9 # Heuristic for full rewrite
+
+        prompt = f"""<role>EXPERT EDITOR</role>
+<context>
+The user wants to refine {"the ENTIRE document" if is_full_rewrite else "a specific section of a document"}.
+FULL CONTEXT:
+...{full_context}...
+</context>
+
+<target_text_to_refine>
+{selection}
+</target_text_to_refine>
+
+<user_instruction>
+{instruction}
+</user_instruction>
+
+<task>
+Rewrite the <target_text_to_refine> following the <user_instruction>.
+RULES:
+1. Maintain the original tone/style unless asked otherwise.
+2. Output ONLY the rewritten text. No conversational filler.
+3. Keep markdown formatting EXACTLY as is (headers, lists, bolding).
+4. Language: Indonesian (unless instructed otherwise).
+5. CRITICAL: If refining the entire document, you MUST preserve ALL 5 original sections (Executive Summary, Key Insights, etc.). Do NOT summarize the summary. RETAIN FULL STRUCTURE AND LENGTH.
+</task>"""
+
+        start_time = time.time()
+        
+        try:
+            if self.provider == "Ollama":
+                return self._summarize_ollama(prompt, start_time)
+            
+            if not self.client: 
+                return {"error": "AI client not initialized"}
+            
+            with self._client_lock:
+                completion = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3 # Lebih presisi untuk editing
+                )
+            
+            usage = completion.usage
+            content = self._clean_output(completion.choices[0].message.content)
+            
+            return {
+                "content": content,
+                "usage": {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens
+                },
+                "model": self.model_name,
+                "provider": self.provider,
+                "cost_estimate": self._calculate_cost(usage.prompt_tokens, usage.completion_tokens),
+                "duration_seconds": round(time.time() - start_time, 2)
+            }
+        except Exception as e:
+            return {"error": f"Refinement failed: {str(e)}"}
+
     # --- FEATURE: TOURNAMENT MODE (Non-Streaming) ---
 
     def summarize_tournament(self, book_metadata: List[Dict], n: int = 3) -> Dict:
