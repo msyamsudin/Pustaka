@@ -234,6 +234,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 3. Keep 'Positioning' as the final distinct section.
 4. Eliminate redundant strategic steps or limitations unless they are vital to positioning.
 5. Output ONLY the 3 sections below.
+6. Body content MUST be in Bahasa Indonesia (Formal-Academic). Headers MUST remain in English.
 </instructions>
 
 <output_structure>
@@ -478,7 +479,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 <task>{hint}</task>
 <material>{fmt}</material>
 <instructions>
-1. Output in Indonesian.
+1. Output body content MUST be in Bahasa Indonesia.
 2. High density.
 3. Use `[[...]]` for data.
 4. Do not include header (##) in response.
