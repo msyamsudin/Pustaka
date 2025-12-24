@@ -18,27 +18,22 @@ class BookSummarizerError(Exception):
 
 
 class BookSummarizer:
-    # --- KONFIGURASI 5 SECTION (SESUAI REKOMENDASI) ---
+    # --- KONFIGURASI 3 SECTION (DIPERBARUI) ---
     STANDARD_SECTIONS = [
         "EXECUTIVE SUMMARY & CORE THESIS",
         "ANALYTICAL FRAMEWORK",
-        "STRATEGIC ACTION PLAN",
-        "MARKET & INTELLECTUAL POSITIONING",
-        "CRITICAL LIMITATIONS"
+        "MARKET & INTELLECTUAL POSITIONING"
     ]
     
     SECTION_KEYWORDS = {
         "EXECUTIVE SUMMARY & CORE THESIS": ["executive", "summary", "core thesis", "ringkasan", "tesis", "quote", "kutipan"],
         "ANALYTICAL FRAMEWORK": ["analytical", "framework", "glossary", "reasoning", "blueprint", "architecture", "kerangka", "istilah", "glosarium"],
-        "STRATEGIC ACTION PLAN": ["strategic", "action plan", "actionable", "roadmap", "implementasi", "implikasi", "roadmap"],
-        "MARKET & INTELLECTUAL POSITIONING": ["market", "positioning", "comparative", "komparatif", "posisi", "competitor", "pesaing"],
-        "CRITICAL LIMITATIONS": ["critical", "limitations", "evaluation", "evaluasi", "kritis", "keterbatasan"]
+        "MARKET & INTELLECTUAL POSITIONING": ["market", "positioning", "comparative", "komparatif", "posisi", "competitor", "pesaing"]
     }
 
     # Mapping tetap dibutuhkan untuk membaca format lama jika ada, 
     # tapi fokus utama adalah memproduksi format baru.
     NAME_MAPPINGS = {
-        # Old -> New
         "EXECUTIVE ANALYTICAL BRIEF": "EXECUTIVE SUMMARY & CORE THESIS",
         "CORE THESIS & KEY ARGUMENTS": "EXECUTIVE SUMMARY & CORE THESIS",
         "REPRESENTATIVE SYNTHESIS": "EXECUTIVE SUMMARY & CORE THESIS",
@@ -47,12 +42,7 @@ class BookSummarizer:
         "GLOSSARY OF DENSITY": "ANALYTICAL FRAMEWORK",
         "REASONING BLUEPRINT": "ANALYTICAL FRAMEWORK",
         
-        "ACTIONABLE INTELLIGENCE & IMPLICATIONS": "STRATEGIC ACTION PLAN",
-        "IMPLEMENTATION ROADMAP": "STRATEGIC ACTION PLAN",
-        
         "COMPARATIVE POSITIONING": "MARKET & INTELLECTUAL POSITIONING",
-        
-        "CRITICAL EVALUATION & LIMITATIONS": "CRITICAL LIMITATIONS"
     }
 
     # Cache & Locks
@@ -152,7 +142,7 @@ class BookSummarizer:
             "description": get_val("description")
         }
 
-    # --- PROMPT CONSTRUCTION (UPDATED TO 5 SECTIONS) ---
+    # --- PROMPT CONSTRUCTION (UPDATED TO 3 SECTIONS) ---
 
     def _get_full_prompt(self, title: str, author: str, genre: str, year: str, 
                          context_description: str, source_note: str, 
@@ -169,7 +159,7 @@ class BookSummarizer:
 
     def _build_summarize_prompt(self, title: str, author: str, genre: str, year: str, 
                                 context: str, source: str, partial: Optional[str]) -> str:
-        """Prompt yang meminta AI menggabungkan konten menjadi 5 Section Padat"""
+        """Prompt yang meminta AI menggabungkan konten menjadi 3 Section Padat"""
         
         intro = f"""<document_metadata>
 Title         : {title}
@@ -182,7 +172,7 @@ Description   : {context[:500] if context else "[Not available]"}
 
 <role_definition>
 You are a KNOWLEDGE SYNTHESIS ENGINE focused on efficiency and density.
-Your goal is to transform content into 5 CONSOLIDATED SUPER-SECTIONS.
+Your goal is to transform content into 3 CONSOLIDATED SUPER-SECTIONS.
 </role_definition>
 
 <data_precision_policy>
@@ -192,7 +182,7 @@ Your goal is to transform content into 5 CONSOLIDATED SUPER-SECTIONS.
 </data_precision_policy>
 
 <output_structure>
-CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIONS.
+CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIONS.
 
 ## 1. EXECUTIVE SUMMARY & CORE THESIS
 [Structure: Paragraph (Summary) + Bullets (Key Arguments) + Blockquote (Iconic Quote)]
@@ -208,25 +198,11 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
   B. Methodology/Proposed Solution (Author's approach)
   C. Synthesis & Rational Conclusions (Proven result)
 
-## 3. STRATEGIC ACTION PLAN
-[Structure: Implications (Actionable) + Steps (Roadmap)]
-- **Actionable Intelligence**: Max 3 operationalizable points with specific domains and steps.
-- **Implementation Roadmap**:
-  Phase 1: Diagnosis & Baseline (Weeks 1-4)
-  Phase 2: Core Intervention (Month 2-6)
-  Phase 3: Sustainability & Optimization (Ongoing)
-
-## 4. MARKET & INTELLECTUAL POSITIONING
+## 3. MARKET & INTELLECTUAL POSITIONING
 [Structure: Contextual Analysis]
 - **Direct Competitors**: Contrast with 1-2 seminal works.
 - **Unique Selling Proposition (USP)**: Specific value not found elsewhere.
 - **Intellectual Heritage**: School of thought built upon or challenged.
-
-## 5. CRITICAL LIMITATIONS
-[Structure: Academic Critique]
-- **Analytical Gaps**: Ignored scenarios or variables.
-- **Methodological Constraints**: Bias, sample size, or period limitations.
-- **Logical Critical Points**: Potential fallacies.
 </output_structure>
 
 <linguistic_guidelines>
@@ -242,11 +218,11 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         return intro
 
     def _build_judge_prompt(self, title: str, author: str, genre: str, year: str, drafts: List[str]) -> str:
-        """Prompt untuk menggabungkan draft menjadi 5 Section Final"""
+        """Prompt untuk menggabungkan draft menjadi 3 Section Final"""
         valid_drafts = [d.strip() for d in drafts if d and str(d).strip()]
         formatted = "\n\n".join([f"═══ DRAFT {i+1} ═══\n{d}" for i, d in enumerate(valid_drafts)])
         
-        return f"""<role>SENIOR EDITOR: Synthesize into 5 CONSOLIDATED SECTIONS.</role>
+        return f"""<role>SENIOR EDITOR: Synthesize into 3 CONSOLIDATED SECTIONS.</role>
 
 <task>Synthesize {len(valid_drafts)} drafts for: "{title}" by {author}.</task>
 
@@ -255,10 +231,9 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 <instructions>
 1. Merge content: Combine 'Core Summary', 'Key Arguments', and 'Quote' into Section 1.
 2. Merge 'Glossary' and 'Reasoning Blueprint' into Section 2.
-3. Merge 'Actionable Intelligence' and 'Roadmap' into Section 3.
-4. Keep 'Positioning' and 'Limitations' as distinct final sections.
-5. Eliminate redundancy.
-6. Output ONLY the 5 sections below.
+3. Keep 'Positioning' as the final distinct section.
+4. Eliminate redundant strategic steps or limitations unless they are vital to positioning.
+5. Output ONLY the 3 sections below.
 </instructions>
 
 <output_structure>
@@ -280,7 +255,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         except Exception as e: return {"error": str(e)}
 
     def _synthesize_section(self, prompt: str, start_time: float) -> Dict:
-        # Debug: Log panjang prompt sebelum dikirim
         print(f"[API_CALL] Preparing request. Prompt Length: {len(prompt)} chars...")
         
         for i in range(self.max_retries):
@@ -303,7 +277,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
                 u = c.usage
                 content = c.choices[0].message.content
 
-                # Validasi apakah konten kosong
                 if not content or len(content.strip()) == 0:
                     err_msg = "API returned empty content (Possible Filter/Safety refusal)"
                     print(f"[ERROR_CONTENT] {err_msg}")
@@ -319,7 +292,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
                 error_msg = str(e)
                 error_type = "GenericError"
                 
-                # Klasifikasi Error agar mudah dibaca
                 if "429" in error_msg or "rate" in error_msg.lower():
                     error_type = "RateLimitError"
                     print(f"[ERROR_API] Rate Limit Hit! Sleeping 5s...")
@@ -331,7 +303,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
                 elif "context" in error_msg.lower() or "length" in error_msg.lower():
                     error_type = "ContextLengthError"
                     print(f"[ERROR_API] Prompt too long for model context!")
-                    break # Stop retry if context length exceeded
+                    break 
                 else:
                     print(f"[ERROR_API] Generic Error ({i+1}/{self.max_retries}): {error_msg}")
                     time.sleep(1)
@@ -341,7 +313,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
                     
         return {"error": "Unknown failure", "error_type": "Unknown"}
 
-    # --- SYNTHESIS LOGIC (OPTIMIZED & UPDATED FOR 5 SECTIONS) ---
+    # --- SYNTHESIS LOGIC (UPDATED FOR 3 SECTIONS) ---
 
     def summarize_synthesize(self, title: str, author: str, genre: str, year: str, 
                              drafts: List[str], diversity_analysis: Dict = None) -> Generator[Dict, None, None]:
@@ -369,7 +341,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
             
             use_full_context = (len(section_contents) == 0)
             
-            # Log jika Fallback terjadi
             if use_full_context:
                 print(f"[FALLBACK] No match found for '{section_name}'. Will use FULL CONTEXT (truncated).")
             
@@ -380,7 +351,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
                 "use_full_context": use_full_context, "index": i
             })
 
-        # PARALLEL SYNTHESIS
+        # PARALLEL SYNTHESIS (Maks 3 task sekarang)
         synthesized_sections = {}
         section_metadata = {}
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -389,7 +360,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         
         print(f"=== STARTING PARALLEL REQUESTS ({len(section_tasks)} tasks) ===")
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, 5)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, 3)) as executor:
             future_to_task = {executor.submit(self._synthesize_section, 
                                              self._create_section_synthesis_prompt(
                                                  t["name"], t["contents"], title, author, genre, year, len(drafts), t["use_full_context"]
@@ -404,7 +375,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
                         if "usage" in res:
                             for k in total_usage: total_usage[k] += res["usage"][k]
                         
-                        # Metadata
                         if not task["use_full_context"] and task["contents"]:
                             sims = [SequenceMatcher(None, c, res["content"]).ratio() for c in task["contents"]]
                             dom = sims.index(max(sims)) + 1
@@ -412,7 +382,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
                         else:
                             section_metadata[task["name"]] = "generated"
                     else:
-                        # Log Error Spesifik
                         errors_count += 1
                         print(f"[FAILED] Section '{task['name']}' failed. Reason: {res.get('error_type', 'Unknown')}")
                 except Exception as e: 
@@ -435,7 +404,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 
         content = "\n".join(final_parts).strip()
         
-        # RESCUE MODE LOGS
         if len(content) < 500:
             reason = "Content length too short."
             if errors_count == len(section_tasks):
@@ -449,27 +417,22 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         yield {
             "content": content, "done": True, "progress": 100,
             "usage": total_usage, "model": self.model_name, "provider": self.provider,
-            "cost_estimate": self._calculate_cost(total_usage["prompt_tokens"], total_usage["completion_tokens"]),
+            "cost_estimate": self._calculate_cost(total_usage.get("prompt_tokens", 0), total_usage.get("completion_tokens", 0)),
             "duration_seconds": round(time.time() - start_time, 2),
             "is_synthesized": True, "draft_count": len(drafts),
             "synthesis_metadata": {"section_sources": section_metadata, "diversity_score": diversity_analysis.get("diversity_score", 0)}
         }
 
     def _match_section_in_draft(self, target: str, draft_sections: Dict, draft_idx: int) -> Optional[str]:
-        # 1. Exact Match
         if target in draft_sections: return draft_sections[target]
         
-        # 2. Mapping Check (Check if this target is composed of old sections)
-        # Kita mencoba mencari konten dari section lama yang termapping ke section baru ini
         norm_target = self._normalize_section_name(target)
         
-        # Cek NAME_MAPPINGS (Old Name -> New Name). Kita cari kebalikannya (New Name -> Old Name)
         potential_sources = []
         for old_name, new_name in self.NAME_MAPPINGS.items():
             if self._normalize_section_name(new_name) == norm_target:
                 potential_sources.append(old_name)
         
-        # Jika kita tahu section ini berasal dari merger (misal EXECUTIVE SUMMARY), gabungkan isinya
         found_contents = []
         for old_name in potential_sources:
             norm_old = self._normalize_section_name(old_name)
@@ -480,7 +443,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         if found_contents:
             return "\n\n".join(found_contents)
 
-        # 3. Fuzzy Normal
         for k, v in draft_sections.items():
             if self._normalize_section_name(k) == norm_target: return v
             
@@ -494,9 +456,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 <task>Generate the "{name}" section for: "{t}" by {a}.</task>
 <instruction>No source material. Generate high-quality placeholder.</instruction>"""
 
-        # FIX: Agresif memotong teks jika fallback mode aktif
-        # Jika full (gagal deteksi section), batasi hanya 800 karakter per sumber
-        # Ini mencegah "Context Length Exceeded" atau Timeout pada model gratis
         limit_char = 800 if full else 3000 
         
         fmt = "\n\n".join([
@@ -504,12 +463,12 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
             for i, c in enumerate(valid_contents)
         ])
         
+        # HINTS DIPERBARUI HANYA UNTUK 3 SECTION
         hints = {
             "EXECUTIVE SUMMARY & CORE THESIS": "Merge Summary, Key Arguments, and Iconic Quote into one cohesive section.",
             "ANALYTICAL FRAMEWORK": "Merge Glossary definitions and Reasoning Blueprint (Gap, Method, Conclusion) here.",
-            "STRATEGIC ACTION PLAN": "Combine Actionable Intelligence and the 3-Phase Implementation Roadmap here.",
-            "MARKET & INTELLECTUAL POSITIONING": "Focus on competitors, USP, and intellectual heritage.",
-            "CRITICAL LIMITATIONS": "Focus on gaps, constraints, and logical risks."
+            "MARKET & INTELLECTUAL POSITIONING": "Focus on competitors, USP, and intellectual heritage."
+            # 'STRATEGIC ACTION PLAN' dan 'CRITICAL LIMITATIONS' dihapus dari hints
         }
         
         hint = hints.get(name, "Synthesize the content for this section.")
@@ -526,25 +485,16 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 </instructions>"""
 
     def _normalize_section_name(self, name: str) -> str:
-        # 1. Hapus tanda pagar header jika ada (# ##)
         if name.startswith('#'): 
             name = name.lstrip('#').strip()
         
-        # 2. Bersihkan karakter khusus kecuali &, -, (, )
         clean = self._regex_patterns['clean_header'].sub('', name)
-        
-        # 3. Normalisasi spasi
         clean = self._regex_patterns['normalize_space'].sub(' ', clean).strip().upper()
-        
-        # 4. CRITICAL FIX: Hapus angka di depan (misal: "1. " atau "2) ")
-        # Ini mencegah kegagalan pencocokan jika AI memberikan nomor pada header
         clean = re.sub(r'^[\d\.\)\s]+', '', clean).strip()
         
-        # 5. Cek mapping langsung (Old Name -> New Name)
         if clean in self.NAME_MAPPINGS: 
             return self.NAME_MAPPINGS[clean]
         
-        # 6. Fuzzy check (Pencocokan parsial)
         base = clean.split('(')[0].strip()
         for key, val in self.NAME_MAPPINGS.items():
             if base in key or key in base: 
@@ -558,7 +508,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         buf = []
         lines = content.split('\n')
         
-        # Debug: Panjang konten
         print(f"[DEBUG] _extract_sections: Processing content length {len(content)} chars...")
 
         for line in lines:
@@ -567,18 +516,19 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
                 if curr: buf.append(line)
                 continue
             
-            # Cek Header Markdown (Sudah diperbaiki di step sebelumnya: #{1,3})
             match = (self._regex_patterns['markdown'].match(s) or
                      self._regex_patterns['bold'].match(s) or
                      self._regex_patterns['numbered'].match(s))
             
-            # Fallback CAPS
             if not match and len(s) >= 10:
                 c = self._regex_patterns['caps'].match(s)
                 if c:
                     pot = c.group(1).strip()
-                    if any(kw in pot for kw in ['EXECUTIVE', 'ANALYTICAL', 'STRATEGIC', 'MARKET', 'CRITICAL', 'THESIS', 'GLOSSARY', 'ACTIONABLE']):
+                    if any(kw in pot for kw in ['EXECUTIVE', 'ANALYTICAL', 'MARKET', 'THESIS', 'GLOSSARY']):
                         match = c
+                    # Filter keyword untuk section yang dihapus agar tidak terbaca sebagai header baru
+                    if any(kw in pot for kw in ['STRATEGIC', 'ACTION', 'LIMITATIONS', 'CRITICAL']):
+                        continue 
 
             if match:
                 if curr: sections[curr] = '\n'.join(buf).strip()
@@ -590,7 +540,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         
         if curr and buf: sections[curr] = '\n'.join(buf).strip()
         
-        # Debug: Lapor hasil ekstraksi
         print(f"[DEBUG] Extracted {len(sections)} sections: {list(sections.keys())}")
         return sections
 
@@ -624,7 +573,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 
     def _get_pricing_info(self) -> Optional[Dict]:
         if self.model_name in self._pricing_cache: return self._pricing_cache[self.model_name]
-        # Fallback
         fb = {"google/gemini-2.0-flash-exp:free": {"prompt": 0, "completion": 0}, "openai/gpt-4o": {"prompt": 5.0, "completion": 15.0}}
         res = fb.get(self.model_name)
         if res: self._pricing_cache[self.model_name] = res
@@ -634,7 +582,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
     
     def summarize(self, book_metadata: List[Dict]) -> Dict:
         """Non-streaming summarize"""
-        # Implementasi logika yang sama seperti sebelumnya, menggunakan _get_full_prompt baru
         try:
             m = self._extract_metadata(book_metadata)
             p = self._get_full_prompt(m["title"], m["author"], m["genre"], m["year"], m["description"], "info")
@@ -710,23 +657,14 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
             else: res.append(line)
         return re.sub(r'\n{4,}', '\n\n\n', '\n'.join(res)).strip()
 
-    # Elaborate, Tournament, dll. bisa ditambahkan kembali dengan pola yang sama
-    def elaborate(self, selection: str, query: str, full_context: str = "", history: List[Dict] = None) -> Dict:
-        # Logika elaborate tetap sama, hanya memanggil _get_full_prompt jika diperlukan (tapi elaborate punya prompt sendiri)
-        # Kode elaborate sebelumnya bisa dipaste kembali di sini jika diperlukan.
-        pass     # --- FEATURE: ELABORATION ---
-
     def elaborate(self, selection: str, query: str, full_context: str = "", history: List[Dict[str, str]] = None) -> Dict:
-        """Elaborate on a selected text based on user query"""
         if not selection: 
             return {"error": "No text selected"}
 
-        # Sanitasi Input
         selection = self._sanitize_input(selection, 1000)
         query = self._sanitize_input(query, 500)
         full_context = self._sanitize_input(full_context, 5000) if full_context else ""
         
-        # Format Conversation History
         history_text = ""
         if history:
             formatted_history = [
@@ -735,7 +673,6 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 5 HEADINGS. DO NOT ADD OR REMOVE SECTIO
             ]
             history_text = "\n".join(formatted_history)
 
-        # Prompt Khusus Elaborasi
         prompt = f"""<role>
 You are a SUBJECT MATTER EXPERT and ACADEMIC TUTOR specializing in deep explanation.
 </role>
@@ -800,12 +737,10 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
         except Exception as e:
             return {"error": f"Elaboration failed: {str(e)}"}
 
-    # --- FEATURE: TOURNAMENT MODE (Non-Streaming) ---
-
     def summarize_tournament(self, book_metadata: List[Dict], n: int = 3) -> Dict:
         """
         Generate multiple summaries (drafts) concurrently, then synthesize the best one.
-        Menghasilkan 5 Section Padat.
+        Menghasilkan 3 Section Padat.
         """
         if not book_metadata: 
             return {"error": "Empty metadata provided"}
@@ -817,9 +752,8 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
         usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         durations = []
         
-        # Phase 1: Generate Drafts Secara Paralel
-        # Draft yang dihasilkan oleh self.summarize sudah menggunakan format 5 section baru
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(n, 5)) as executor:
+        # Phase 1: Generate Drafts Secara Paralel (Format 3 section baru)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(n, 3)) as executor:
             future_to_draft = {executor.submit(self.summarize, book_metadata): i for i in range(n)}
             
             for future in concurrent.futures.as_completed(future_to_draft):
@@ -840,7 +774,6 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
             return {"error": "Failed to generate any drafts"}
 
         # Phase 2: Synthesis (Judge)
-        # Menggunakan prompt judge yang sudah dikonfigurasi untuk menggabungkan menjadi 5 section
         try:
             metadata = self._extract_metadata(book_metadata)
             judge_prompt = self._get_full_prompt(
@@ -876,7 +809,6 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 }
                 final_content = self._clean_output(completion.choices[0].message.content)
 
-            # Agregasi Statistik
             for k in usage_total: 
                 usage_total[k] += j_usage[k]
             
@@ -892,22 +824,19 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 "duration_seconds": round(avg_duration + duration_judge, 2),
                 "is_enhanced": True,
                 "draft_count": len(drafts),
-                "format": "5_sections_consolidated"
+                "format": "3_sections_consolidated"
             }
         except Exception as e:
-            # Fallback: Kembalikan draft pertama jika judge gagal
             return {
                 "error": f"Judging failed: {str(e)}", 
-                "fallback": drafts[0],
+                "fallback": drafts[0] if drafts else "Failed to generate drafts",
                 "usage": usage_total
             }
-
-    # --- FEATURE: TOURNAMENT MODE (Streaming) ---
 
     def summarize_tournament_stream(self, book_metadata: List[Dict], n: int = 3) -> Generator[str, None, None]:
         """
         Stream tournament process: Drafting -> Synthesis.
-        Menghasilkan 5 Section Padat.
+        Menghasilkan 3 Section Padat.
         """
         if not book_metadata:
             yield f"data: {json.dumps({'error': 'Empty metadata'})}\n\n"
@@ -917,10 +846,10 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
         usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         durations = []
 
-        yield f"data: {json.dumps({'status': f'Generating {n} draft(s) (5-section format)...', 'progress': 5})}\n\n"
+        yield f"data: {json.dumps({'status': f'Generating {n} draft(s) (3-section format)...', 'progress': 5})}\n\n"
         
         # Phase 1: Draft Generation (Concurrent)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(n, 5)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(n, 3)) as executor:
             future_to_idx = {executor.submit(self.summarize, book_metadata): i for i in range(n)}
             
             completed = 0
@@ -936,7 +865,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                             durations.append(res["duration_seconds"])
                         
                         completed += 1
-                        progress = 5 + int((completed / n) * 60) # 5 -> 65% untuk drafting
+                        progress = 5 + int((completed / n) * 60)
                         yield f"data: {json.dumps({'status': f'Draft {completed}/{n} completed', 'progress': progress})}\n\n"
                 except Exception as e:
                     print(f"Stream Tournament Draft Error: {e}")
@@ -956,14 +885,12 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 drafts=drafts
             )
             
-            yield f"data: {json.dumps({'status': 'Synthesizing final artifact (5 sections)...', 'progress': 70})}\n\n"
+            yield f"data: {json.dumps({'status': 'Synthesizing final artifact (3 sections)...', 'progress': 70})}\n\n"
             
             start_judge = time.time()
             
             if self.provider == "Ollama":
-                # Stream Ollama langsung
                 for chunk in self._stream_ollama(judge_prompt, start_judge):
-                    # Intercept chunk terakhir untuk agregasi usage
                     if "done" in chunk:
                         try:
                             d = json.loads(chunk[6:])
@@ -973,7 +900,6 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                         except: pass
                     yield chunk
             else:
-                # Stream OpenRouter/Groq
                 if not self.client:
                     yield f"data: {json.dumps({'error': 'Client not initialized'})}\n\n"
                     return
@@ -1003,7 +929,6 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                             content_buffer.append(c)
                             yield f"data: {json.dumps({'content': c})}\n\n"
 
-                # Final Stats Event
                 if final_usage:
                     for k in usage_total: 
                         usage_total[k] += final_usage[k]
@@ -1011,15 +936,15 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 avg_duration = sum(durations) / len(durations) if durations else 0
                 duration_judge = round(time.time() - start_judge, 2)
 
-                yield f"data: {json.dumps({{
+                yield f"data: {json.dumps({
                     'done': True, 'progress': 100,
                     'usage': usage_total,
-                    'cost_estimate': self._calculate_cost(usage_total['prompt_tokens'], usage_total['completion_tokens']),
+                    'cost_estimate': self._calculate_cost(usage_total.get('prompt_tokens', 0), usage_total.get('completion_tokens', 0)),
                     'duration_seconds': round(avg_duration + duration_judge, 2),
                     'is_enhanced': True,
                     'draft_count': len(drafts),
-                    'format': '5_sections_consolidated'
-                }})}\n\n"
+                    'format': '3_sections_consolidated'
+                })}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'error': f'Judging failed: {str(e)}'})}\n\n"
