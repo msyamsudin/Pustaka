@@ -172,8 +172,8 @@ Description   : {context[:500] if context else "[Not available]"}
 </document_metadata>
 
 <role_definition>
-You are a KNOWLEDGE SYNTHESIS ENGINE focused on efficiency and density.
-Your goal is to transform content into 3 CONSOLIDATED SUPER-SECTIONS.
+You are a MULTI-SOURCE INTELLIGENCE ANALYST focused on density and precision.
+Your goal is to transform content into 3 CONSOLIDATED PRIMARY SECTIONS.
 </role_definition>
 
 <data_precision_policy>
@@ -184,7 +184,7 @@ Your goal is to transform content into 3 CONSOLIDATED SUPER-SECTIONS.
 
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
-- [Analisis Terintegrasi] : Key claim, analytical insight, or model synthesis.
+- [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
 </claim_tagging_policy>
 
 <output_structure>
@@ -228,7 +228,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         valid_drafts = [d.strip() for d in drafts if d and str(d).strip()]
         formatted = "\n\n".join([f"═══ DRAFT {i+1} ═══\n{d}" for i, d in enumerate(valid_drafts)])
         
-        return f"""<role>SENIOR EDITOR: Synthesize into 3 CONSOLIDATED SECTIONS.</role>
+        return f"""<role>SENIOR EDITOR: Consolidate content into 3 PRIMARY SECTIONS.</role>
 
 <task>Synthesize {len(valid_drafts)} drafts for: "{title}" by {author}.</task>
 
@@ -236,7 +236,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
-- [Analisis Terintegrasi] : Key claim, analytical insight, or model synthesis.
+- [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
 </claim_tagging_policy>
 
 <instructions>
@@ -502,7 +502,7 @@ Explicitly label every important claim/statement with ONE of these tags:
 
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
-- [Analisis Terintegrasi] : Key claim, analytical insight, or model synthesis.
+- [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
 </claim_tagging_policy>
 
 <instructions>
