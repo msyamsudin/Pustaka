@@ -431,7 +431,17 @@ option {
   margin-right: auto;
   border-radius: 15px;
   /* Zinc 950 with opacity */
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    margin 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex !important;
+  align-items: center;
 }
 
 .sticky-summary-header.is-stuck {
@@ -446,14 +456,11 @@ option {
   border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 0 1.25rem;
   /* Removed vertical padding */
-  background: rgba(24, 24, 27, 0.75);
+  background: rgba(24, 24, 27, 0.9);
   /* Zinc 900 with more transparency */
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(20px);
   /* Increased blur */
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex !important;
-  align-items: center !important;
 }
 
 .sticky-summary-header.is-stuck>div {
@@ -468,10 +475,11 @@ option {
 }
 
 .sticky-summary-header.is-stuck .book-cover-container {
-  width: 0;
+  max-width: 0;
   margin-right: 0;
   opacity: 0;
   pointer-events: none;
+  transform: scale(0.8);
 }
 
 .sticky-summary-header .header-title {

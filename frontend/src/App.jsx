@@ -456,6 +456,7 @@ function App() {
 
   const [isStuck, setIsStuck] = useState(false);
   const headerRef = useRef(null);
+  const stickySentinelRef = useRef(null);
   const libraryContentRef = useRef(null);
 
   // Cover Edit State
@@ -849,18 +850,30 @@ function App() {
     };
     checkBackendAndLoadConfig();
 
-    // Scroll listener for sticky header
-    const handleScroll = () => {
-      if (headerRef.current) {
-        const rect = headerRef.current.getBoundingClientRect();
-        // If the header reaches the top, mark it as stuck
-        setIsStuck(rect.top <= 0);
-      }
-    };
+    // IntersectionObserver for sticky header detection
+    const hasSummary = !!summary;
+    const sentinel = stickySentinelRef.current;
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+    if (!hasSummary || !sentinel) {
+      setIsStuck(false);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // When entry.isIntersecting is false, it means the sentinel has scrolled out of view
+        // top <= 0 means it went above the viewport
+        setIsStuck(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+      },
+      { threshold: [0, 1] }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [!!summary]); // Only re-run when summary appears or disappears
 
   // Metadata Edit Modal State
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
@@ -1530,6 +1543,7 @@ function App() {
     setHighQuality(false);
     setIsSelectionMode(false);
     setSelectedVariantIds([]);
+    setIsStuck(false);
   };
 
   const handleCopy = () => {
@@ -2504,6 +2518,11 @@ function App() {
         {/* Summary Result Area */}
         {summarizing && !summary && !showSettings && <SkeletonSummary status={streamingStatus} progress={progress} onStop={() => abortControllerRef.current?.abort()} />}
 
+        {/* Sentinel for sticky header detection - placed outside the animating card */}
+        {summary && !showSettings && (
+          <div ref={stickySentinelRef} style={{ height: '1px', marginBottom: '-1px', width: '100%', pointerEvents: 'none' }}></div>
+        )}
+
         {/* Summary Result */}
         {summary && !showSettings && (
           <div className="glass-card animate-slide-up summary-card" style={{ position: 'relative' }}>
@@ -2632,6 +2651,7 @@ function App() {
               </div>
             )}
 
+            {/* Sentinel removed from here */}
             <div
               ref={headerRef}
               className={`sticky-summary-header ${isStuck ? 'is-stuck' : ''}`}
