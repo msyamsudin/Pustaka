@@ -2800,11 +2800,34 @@ function App() {
                         </span>
                       );
                     }
+                    if (content.startsWith('claim-tag:')) {
+                      const tag = content.replace('claim-tag:', '');
+                      let color = '#ccc';
+
+                      if (tag === 'Parafrasa Penulis') color = '#60a5fa';
+                      else if (tag === 'Interpretasi Analitis') color = '#c084fc';
+                      else if (tag === 'Inferensi Historis') color = '#fbbf24';
+                      else if (tag === 'Spekulasi Model') color = '#f472b6';
+
+                      return (
+                        <span
+                          className="claim-dot"
+                          style={{ backgroundColor: color, color: color }}
+                          title={tag}
+                        />
+                      );
+                    }
                     return <code className={className} {...props}>{children}</code>;
                   }
                 }}
               >
-                {summary ? summary.replace(/\[\[(.*?)\]\]/g, '`intel-synth:$1`') : ""}
+                {summary ? summary
+                  .replace(/\[\[(.*?)\]\]/g, '`intel-synth:$1`')
+                  .replace(/\[Parafrasa Penulis\]/g, '`claim-tag:Parafrasa Penulis`')
+                  .replace(/\[Interpretasi Analitis\]/g, '`claim-tag:Interpretasi Analitis`')
+                  .replace(/\[Inferensi Historis\]/g, '`claim-tag:Inferensi Historis`')
+                  .replace(/\[Spekulasi Model\]/g, '`claim-tag:Spekulasi Model`')
+                  : ""}
               </ReactMarkdown>
               {summarizing && summary && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>

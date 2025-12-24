@@ -645,3 +645,24 @@ option {
   visibility: visible;
   transform: translateX(-50%) translateY(-8px);
 }
+
+/* Micro-Dot Tag Style */
+.claim-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin: 0 4px;
+  vertical-align: middle;
+  cursor: help;
+  position: relative;
+  top: -1px;
+  opacity: 0.6;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.claim-dot:hover {
+  opacity: 1;
+  transform: scale(1.5);
+  box-shadow: 0 0 8px currentColor;
+}
