@@ -12,6 +12,7 @@ from verifier import BookVerifier
 from summarizer import BookSummarizer
 from config_manager import ConfigManager
 from storage_manager import StorageManager
+from notion_manager import NotionManager
 
 load_dotenv()
 
@@ -50,6 +51,8 @@ class ConfigRequest(BaseModel):
     groq_model: Optional[str] = None
     ollama_base_url: Optional[str] = None
     provider: Optional[str] = None
+    notion_api_key: Optional[str] = None
+    notion_database_id: Optional[str] = None
 
 class CoverUpdateRequest(BaseModel):
     image_url: str
@@ -59,6 +62,12 @@ class MetadataUpdateRequest(BaseModel):
     author: str
     isbn: str
     genre: Optional[str] = None
+
+class NotionShareRequest(BaseModel):
+    title: str
+    author: str
+    summary_content: str
+    metadata: Optional[Dict] = {}
 
 @app.get("/")
 def read_root():
@@ -90,6 +99,10 @@ def update_config(req: ConfigRequest):
         current_config["groq_model"] = req.groq_model
     if req.provider is not None:
         current_config["provider"] = req.provider
+    if req.notion_api_key is not None:
+        current_config["notion_api_key"] = req.notion_api_key
+    if req.notion_database_id is not None:
+        current_config["notion_database_id"] = req.notion_database_id
         
     config_manager.save_config(current_config)
     return {"status": "success", "config": current_config}
@@ -429,6 +442,31 @@ def delete_book(book_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Book not found")
     return {"status": "success", "id": book_id}
+
+@app.post("/api/share/notion")
+async def share_to_notion(req: NotionShareRequest):
+    config = config_manager.load_config()
+    api_key = config.get("notion_api_key")
+    database_id = config.get("notion_database_id")
+    
+    if not api_key or not database_id:
+        raise HTTPException(
+            status_code=400, 
+            detail="Konfigurasi Notion belum lengkap. Harap atur API Key dan Database ID di pengaturan."
+        )
+    
+    manager = NotionManager(api_key, database_id)
+    result = manager.create_summary_page(
+        title=req.title, 
+        author=req.author, 
+        summary_content=req.summary_content, 
+        metadata=req.metadata
+    )
+    
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    
+    return result
 
 
 if __name__ == "__main__":

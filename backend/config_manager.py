@@ -17,7 +17,9 @@ class ConfigManager:
                 "ollama_base_url": "http://localhost:11434",
                 "ollama_model": "llama3",
                 "groq_key": "",
-                "groq_model": "llama-3.3-70b-versatile"
+                "groq_model": "llama-3.3-70b-versatile",
+                "notion_api_key": "",
+                "notion_database_id": ""
             })
 
     def load_config(self) -> Dict:

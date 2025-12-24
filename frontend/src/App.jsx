@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus, MessageSquarePlus } from 'lucide-react';
+import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus, MessageSquarePlus, Share2 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
 
@@ -414,6 +414,9 @@ function App() {
   const [ollamaModel, setOllamaModel] = useState('llama3');
   const [groqKey, setGroqKey] = useState('');
   const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile');
+  const [notionApiKey, setNotionApiKey] = useState('');
+  const [notionDatabaseId, setNotionDatabaseId] = useState('');
+  const [isNotionSharing, setIsNotionSharing] = useState(false);
   const [availableModels, setAvailableModels] = useState([]);
   const [keyValid, setKeyValid] = useState(null); // null, true, false
   const [keyError, setKeyError] = useState('');
@@ -825,6 +828,9 @@ function App() {
           if (configRes.data.groq_key) setGroqKey(configRes.data.groq_key);
           if (configRes.data.groq_model) setGroqModel(configRes.data.groq_model);
 
+          if (configRes.data.notion_api_key) setNotionApiKey(configRes.data.notion_api_key);
+          if (configRes.data.notion_database_id) setNotionDatabaseId(configRes.data.notion_database_id);
+
           // Initial model fetch based on active provider
           const activeProvider = configRes.data.provider || 'OpenRouter';
           if (activeProvider === 'OpenRouter' && configRes.data.openrouter_key) {
@@ -1057,7 +1063,9 @@ function App() {
             provider: targetProvider,
             openrouter_key: targetProvider === 'OpenRouter' ? key : openRouterKey,
             groq_key: targetProvider === 'Groq' ? key : groqKey,
-            ollama_base_url: targetProvider === 'Ollama' ? baseUrl : ollamaBaseUrl
+            ollama_base_url: targetProvider === 'Ollama' ? baseUrl : ollamaBaseUrl,
+            notion_api_key: notionApiKey,
+            notion_database_id: notionDatabaseId
           });
         }
       }
@@ -1563,6 +1571,37 @@ function App() {
     }
   };
 
+  const handleShareToNotion = async () => {
+    if (!summary) return;
+
+    setIsNotionSharing(true);
+    try {
+      const res = await axios.post(`${API_BASE_URL}/share/notion`, {
+        title: currentBook?.title || title || verificationResult?.sources[0]?.title || "Unknown Title",
+        author: currentBook?.author || author || verificationResult?.sources[0]?.author || "Unknown Author",
+        summary_content: summary,
+        metadata: {
+          isbn: isbn,
+          genre: currentBook?.genre || verificationResult?.sources.find(s => s.genre)?.genre || "",
+          model: currentVariant?.model || (provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)),
+          provider: currentVariant?.usage_stats?.provider || provider
+        }
+      });
+
+      if (res.data.error) {
+        showAlert("Gagal Berbagi", res.data.error);
+      } else {
+        showToast("Berhasil dibagikan ke Notion!", "success");
+      }
+    } catch (err) {
+      console.error("Notion sharing failed", err);
+      const msg = err.response?.data?.detail || "Gagal menghubungkan ke Notion API.";
+      showAlert("Gagal Berbagi", msg);
+    } finally {
+      setIsNotionSharing(false);
+    }
+  };
+
   // Status Cycling Effect (Chain of Density)
   useEffect(() => {
     if (!summarizing || summary || (tokensReceived > 0)) return;
@@ -1909,6 +1948,47 @@ function App() {
                   }}
                   placeholder="Pilih model..."
                 />
+              </div>
+
+              <div style={{ marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Share2 size={18} color="var(--accent-color)" />
+                  Konfigurasi Notion
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      Notion API Key
+                    </label>
+                    <input
+                      type="password"
+                      value={notionApiKey}
+                      onChange={(e) => {
+                        setNotionApiKey(e.target.value);
+                        saveConfig({ notion_api_key: e.target.value });
+                      }}
+                      className="input-field"
+                      placeholder="secret_..."
+                      style={{ marginBottom: 0 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      Database ID
+                    </label>
+                    <input
+                      type="text"
+                      value={notionDatabaseId}
+                      onChange={(e) => {
+                        setNotionDatabaseId(e.target.value);
+                        saveConfig({ notion_database_id: e.target.value });
+                      }}
+                      className="input-field"
+                      placeholder="32 chars ID"
+                      style={{ marginBottom: 0 }}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -2654,6 +2734,27 @@ function App() {
                           <Check size={14} color="var(--success)" />
                         ) : (
                           <Copy size={14} title="Salin Brief" />
+                        )}
+                      </button>
+
+                      <button
+                        onClick={handleShareToNotion}
+                        disabled={isNotionSharing}
+                        className="btn-secondary"
+                        title="Kirim ke Notion"
+                        style={{
+                          padding: '0.35rem 0.7rem',
+                          marginLeft: '5px',
+                          marginTop: '2px',
+                          marginBottom: '2px',
+                          marginRight: '2px',
+                          color: 'var(--accent-color)'
+                        }}
+                      >
+                        {isNotionSharing ? (
+                          <RefreshCw size={14} className="spin" />
+                        ) : (
+                          <Share2 size={14} />
                         )}
                       </button>
 
