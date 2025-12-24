@@ -940,6 +940,8 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 yield f"data: {json.dumps({
                     'done': True, 'progress': 100,
                     'usage': usage_total,
+                    'model': self.model_name,
+                    'provider': self.provider,
                     'cost_estimate': self._calculate_cost(usage_total.get('prompt_tokens', 0), usage_total.get('completion_tokens', 0)),
                     'duration_seconds': round(avg_duration + duration_judge, 2),
                     'is_enhanced': True,
