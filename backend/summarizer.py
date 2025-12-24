@@ -4,9 +4,10 @@ import re
 import time
 from difflib import SequenceMatcher
 from threading import Lock
-from typing import Dict, Generator, List, Optional
+from typing import Dict, Generator, AsyncGenerator, List, Optional
 
 import requests
+import anyio
 from openai import OpenAI
 
 from currency_manager import CurrencyManager
@@ -316,8 +317,8 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 
     # --- SYNTHESIS LOGIC (UPDATED FOR 3 SECTIONS) ---
 
-    def summarize_synthesize(self, title: str, author: str, genre: str, year: str, 
-                             drafts: List[str], diversity_analysis: Dict = None) -> Generator[Dict, None, None]:
+    async def summarize_synthesize(self, title: str, author: str, genre: str, year: str, 
+                             drafts: List[str], diversity_analysis: Dict = None) -> AsyncGenerator[Dict, None]:
         
         print(f"=== STARTING SYNTHESIS for '{title}' ===")
         if not drafts: 
@@ -361,33 +362,42 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         
         print(f"=== STARTING PARALLEL REQUESTS ({len(section_tasks)} tasks) ===")
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, 3)) as executor:
-            future_to_task = {executor.submit(self._synthesize_section, 
-                                             self._create_section_synthesis_prompt(
-                                                 t["name"], t["contents"], title, author, genre, year, len(drafts), t["use_full_context"]
-                                             ), start_time): t for t in section_tasks}
-
-            for future in concurrent.futures.as_completed(future_to_task):
-                task = future_to_task[future]
+        async with anyio.create_task_group() as tg:
+            send_stream, receive_stream = anyio.create_memory_object_stream()
+            
+            async def run_section_synthesis(task):
                 try:
-                    res = future.result()
-                    if "error" not in res:
-                        synthesized_sections[task["name"]] = res["content"]
-                        if "usage" in res:
-                            for k in total_usage: total_usage[k] += res["usage"][k]
-                        
-                        if not task["use_full_context"] and task["contents"]:
-                            sims = [SequenceMatcher(None, c, res["content"]).ratio() for c in task["contents"]]
-                            dom = sims.index(max(sims)) + 1
-                            section_metadata[task["name"]] = f"draft_{dom}_dominant" if max(sims) > 0.7 else "merged"
-                        else:
-                            section_metadata[task["name"]] = "generated"
+                    prompt = self._create_section_synthesis_prompt(
+                        task["name"], task["contents"], title, author, genre, year, len(drafts), task["use_full_context"]
+                    )
+                    res = await anyio.to_thread.run_sync(self._synthesize_section, prompt, start_time)
+                    await send_stream.send((task, res))
+                except Exception as e:
+                    await send_stream.send((task, {"error": str(e), "error_type": "Crash"}))
+
+            for task in section_tasks:
+                tg.start_soon(run_section_synthesis, task)
+            
+            # Background task to close the stream when all tasks are done
+            async def closer():
+                pass # tg will block anyway, we use receive_stream.receive() in a loop
+            
+            for _ in range(len(section_tasks)):
+                task, res = await receive_stream.receive()
+                if "error" not in res:
+                    synthesized_sections[task["name"]] = res["content"]
+                    if "usage" in res:
+                        for k in total_usage: total_usage[k] += res["usage"][k]
+                    
+                    if not task["use_full_context"] and task["contents"]:
+                        sims = [SequenceMatcher(None, c, res["content"]).ratio() for c in task["contents"]]
+                        dom = sims.index(max(sims)) + 1
+                        section_metadata[task["name"]] = f"draft_{dom}_dominant" if max(sims) > 0.7 else "merged"
                     else:
-                        errors_count += 1
-                        print(f"[FAILED] Section '{task['name']}' failed. Reason: {res.get('error_type', 'Unknown')}")
-                except Exception as e: 
+                        section_metadata[task["name"]] = "generated"
+                else:
                     errors_count += 1
-                    print(f"[CRASH] Section {task['name']} crashed: {e}")
+                    print(f"[FAILED] Section '{task['name']}' failed. Reason: {res.get('error_type', 'Unknown')}")
                 
                 completed += 1
                 yield {"status": f"Synthesizing: {task['name']}", "progress": 10 + int((completed / len(section_tasks)) * 80)}
@@ -573,11 +583,49 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         return {"total_usd": None, "total_idr": None, "currency": "USD", "is_free": False}
 
     def _get_pricing_info(self) -> Optional[Dict]:
-        if self.model_name in self._pricing_cache: return self._pricing_cache[self.model_name]
-        fb = {"google/gemini-2.0-flash-exp:free": {"prompt": 0, "completion": 0}, "openai/gpt-4o": {"prompt": 5.0, "completion": 15.0}}
-        res = fb.get(self.model_name)
-        if res: self._pricing_cache[self.model_name] = res
-        return res
+        """Gets pricing info for the current model, fetching from OpenRouter if needed."""
+        now = time.time()
+        
+        with self._pricing_cache_lock:
+            # 1. Check if cache is still valid
+            if (self.model_name in self._pricing_cache and 
+                (now - self._pricing_cache_timestamp) < self.PRICING_CACHE_TTL):
+                return self._pricing_cache[self.model_name]
+
+            # 2. Hardcoded fallbacks
+            fb = {
+                "google/gemini-2.0-flash-exp:free": {"prompt": 0, "completion": 0},
+                "openai/gpt-4o": {"prompt": 5.0e-6, "completion": 15.0e-6}, # Fixed scaling (per token)
+                "openai/gpt-4o-mini": {"prompt": 0.15e-6, "completion": 0.6e-6}
+            }
+            if self.model_name in fb:
+                self._pricing_cache[self.model_name] = fb[self.model_name]
+                return fb[self.model_name]
+
+            # 3. Dynamic Fetch for OpenRouter
+            if self.provider == "OpenRouter":
+                try:
+                    print(f"[PRICING] Fetching dynamic pricing from OpenRouter for {self.model_name}...")
+                    response = requests.get("https://openrouter.ai/api/v1/models", timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        models = data.get("data", [])
+                        for m in models:
+                            m_id = m.get("id")
+                            p = m.get("pricing")
+                            if m_id and p:
+                                # Store all models in cache while we're at it
+                                self._pricing_cache[m_id] = {
+                                    "prompt": float(p.get("prompt", 0)),
+                                    "completion": float(p.get("completion", 0))
+                                }
+                        
+                        self._pricing_cache_timestamp = now
+                        return self._pricing_cache.get(self.model_name)
+                except Exception as e:
+                    print(f"[ERROR] Failed to fetch OpenRouter pricing: {e}")
+
+        return None
 
     # --- PUBLIC METHODS (Stream & Summarize Skeletons) ---
     
@@ -608,7 +656,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
             }
         except Exception as e: return {"error": str(e)}
 
-    def summarize_stream(self, book_metadata: List[Dict], partial_content: Optional[str] = None) -> Generator[str, None, None]:
+    async def summarize_stream(self, book_metadata: List[Dict], partial_content: Optional[str] = None) -> AsyncGenerator[str, None]:
         """Streaming summarize"""
         try:
             m = self._extract_metadata(book_metadata)
@@ -617,18 +665,40 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
             
             start = time.time()
             if self.provider == "Ollama":
-                yield from self._stream_ollama(p, start)
+                async for chunk in self._stream_ollama(p, start):
+                    yield chunk
             else:
                 if not self.client: yield f"data: {json.dumps({'error': 'No client'})}\n\n"; return
-                with self._client_lock:
-                    stream = self.client.chat.completions.create(model=self.model_name, messages=[{"role": "user", "content": p}], stream=True, stream_options={"include_usage": True})
+                
+                # OpenAI streaming completion is blocking in its generator, but we can wrap it
+                def get_stream():
+                    with self._client_lock:
+                        return self.client.chat.completions.create(
+                            model=self.model_name, 
+                            messages=[{"role": "user", "content": p}], 
+                            stream=True, 
+                            stream_options={"include_usage": True}
+                        )
+                
+                stream = await anyio.to_thread.run_sync(get_stream)
                 
                 parts = []; usage = None
-                for chunk in stream:
-                    if hasattr(chunk, 'usage') and chunk.usage: usage = {k:getattr(chunk.usage, k) for k in ['prompt_tokens', 'completion_tokens', 'total_tokens']}
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        parts.append(chunk.choices[0].delta.content)
-                        yield f"data: {json.dumps({'content': chunk.choices[0].delta.content})}\n\n"
+                
+                # Iterating over the stream is blocking
+                while True:
+                    try:
+                        chunk = await anyio.to_thread.run_sync(next, stream, None)
+                        if chunk is None: break
+                        
+                        if hasattr(chunk, 'usage') and chunk.usage: 
+                            usage = {k:getattr(chunk.usage, k) for k in ['prompt_tokens', 'completion_tokens', 'total_tokens']}
+                        
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            c = chunk.choices[0].delta.content
+                            parts.append(c)
+                            yield f"data: {json.dumps({'content': c})}\n\n"
+                    except StopIteration:
+                        break
                 
                 stats = {'done': True, 'duration_seconds': round(time.time()-start, 2), 'model': self.model_name, 'provider': self.provider}
                 if usage:
@@ -637,16 +707,40 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
                 yield f"data: {json.dumps(stats)}\n\n"
         except Exception as e: yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-    def _stream_ollama(self, prompt: str, start: float) -> Generator[str, None, None]:
+    async def _stream_ollama(self, prompt: str, start: float) -> AsyncGenerator[str, None]:
         try:
-            r = requests.post(f"{self.base_url}/api/generate", json={"model": self.model_name, "prompt": prompt, "stream": True}, stream=True, timeout=self.timeout)
+            def make_request():
+                return requests.post(
+                    f"{self.base_url}/api/generate", 
+                    json={"model": self.model_name, "prompt": prompt, "stream": True}, 
+                    stream=True, 
+                    timeout=self.timeout
+                )
+            
+            r = await anyio.to_thread.run_sync(make_request)
             if r.status_code != 200: yield f"data: {json.dumps({'error': r.text})}\n\n"; return
-            for line in r.iter_lines():
+            
+            # r.iter_lines is also blocking
+            iterator = r.iter_lines()
+            while True:
+                line = await anyio.to_thread.run_sync(next, iterator, None)
+                if line is None: break
+                
                 if line:
                     d = json.loads(line.decode('utf-8'))
                     if d.get("response"): yield f"data: {json.dumps({'content': d['response']})}\n\n"
                     if d.get("done"):
-                        yield f"data: {json.dumps({'done': True, 'duration_seconds': round(time.time()-start, 2), 'model': self.model_name, 'provider': 'Ollama', 'usage': {'prompt_tokens': d.get('prompt_eval_count', 0), 'completion_tokens': d.get('eval_count', 0), 'total_tokens': d.get('prompt_eval_count', 0)+d.get('eval_count', 0)}})}\n\n"
+                        yield f"data: {json.dumps({
+                            'done': True, 
+                            'duration_seconds': round(time.time()-start, 2), 
+                            'model': self.model_name, 
+                            'provider': 'Ollama', 
+                            'usage': {
+                                'prompt_tokens': d.get('prompt_eval_count', 0), 
+                                'completion_tokens': d.get('eval_count', 0), 
+                                'total_tokens': d.get('prompt_eval_count', 0)+d.get('eval_count', 0)
+                            }
+                        })}\n\n"
         except Exception as e: yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     def _normalize_output_format(self, text: str) -> str:
@@ -834,7 +928,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 "usage": usage_total
             }
 
-    def summarize_tournament_stream(self, book_metadata: List[Dict], n: int = 3) -> Generator[str, None, None]:
+    async def summarize_tournament_stream(self, book_metadata: List[Dict], n: int = 3) -> AsyncGenerator[str, None]:
         """
         Stream tournament process: Drafting -> Synthesis.
         Menghasilkan 3 Section Padat.
@@ -850,104 +944,161 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
         yield f"data: {json.dumps({'status': f'Generating {n} draft(s) (3-section format)...', 'progress': 5})}\n\n"
         
         # Phase 1: Draft Generation (Concurrent)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(n, 3)) as executor:
-            future_to_idx = {executor.submit(self.summarize, book_metadata): i for i in range(n)}
+        async with anyio.create_task_group() as tg:
+            send_stream, receive_stream = anyio.create_memory_object_stream()
+            
+            async def run_draft(idx):
+                try:
+                    res = await anyio.to_thread.run_sync(self.summarize, book_metadata)
+                    await send_stream.send(res)
+                except Exception as e:
+                    await send_stream.send({"error": str(e)})
+
+            for i in range(n):
+                tg.start_soon(run_draft, i)
             
             completed = 0
-            for future in concurrent.futures.as_completed(future_to_idx):
-                try:
-                    res = future.result()
-                    if "content" in res:
-                        drafts.append(res["content"])
-                        if "usage" in res:
-                            for k in usage_total: 
-                                usage_total[k] += res["usage"][k]
-                        if "duration_seconds" in res: 
-                            durations.append(res["duration_seconds"])
-                        
-                        completed += 1
-                        progress = 5 + int((completed / n) * 60)
-                        yield f"data: {json.dumps({'status': f'Draft {completed}/{n} completed', 'progress': progress})}\n\n"
-                except Exception as e:
-                    print(f"Stream Tournament Draft Error: {e}")
-                    continue
+            for _ in range(n):
+                res = await receive_stream.receive()
+                if "content" in res:
+                    drafts.append(res["content"])
+                    if "usage" in res:
+                        for k in usage_total: usage_total[k] += res["usage"][k]
+                    if "duration_seconds" in res: durations.append(res["duration_seconds"])
+                    
+                    completed += 1
+                    progress = 5 + int((completed / n) * 60)
+                    yield f"data: {json.dumps({'status': f'Draft {completed}/{n} completed', 'progress': progress})}\n\n"
+                else:
+                    print(f"Stream Tournament Draft Error: {res.get('error')}")
 
         if not drafts:
             yield f"data: {json.dumps({'error': 'Failed to generate any drafts'})}\n\n"
             return
 
-        # Phase 2: Judging/Synthesis (Streaming)
-        try:
-            metadata = self._extract_metadata(book_metadata)
-            judge_prompt = self._get_full_prompt(
-                metadata["title"], metadata["author"], metadata["genre"], 
-                metadata["year"], "", "", 
-                mode="judge", 
-                drafts=drafts
-            )
-            
-            yield f"data: {json.dumps({'status': 'Synthesizing final artifact (3 sections)...', 'progress': 70})}\n\n"
-            
-            start_judge = time.time()
-            
-            if self.provider == "Ollama":
-                for chunk in self._stream_ollama(judge_prompt, start_judge):
-                    if "done" in chunk:
+        # Phase 2: Judging/Synthesis (Streaming with Robustness)
+        max_attempts = 2
+        last_error = None
+        
+        for attempt in range(max_attempts):
+            try:
+                metadata = self._extract_metadata(book_metadata)
+                judge_prompt = self._get_full_prompt(
+                    metadata["title"], metadata["author"], metadata["genre"], 
+                    metadata["year"], "", "", 
+                    mode="judge", 
+                    drafts=drafts
+                )
+                
+                status_msg = 'Synthesizing final artifact...' if attempt == 0 else f'Synthesizing final artifact (Retry {attempt})...'
+                yield f"data: {json.dumps({'status': status_msg, 'progress': 70 + (attempt * 10)})}\n\n"
+                
+                start_judge = time.time()
+                
+                if self.provider == "Ollama":
+                    async for chunk in self._stream_ollama(judge_prompt, start_judge):
+                        if "done" in chunk:
+                            try:
+                                d = json.loads(chunk[6:])
+                                if "usage" in d:
+                                    u = d["usage"]
+                                    for k in usage_total: usage_total[k] += u[k]
+                            except: pass
+                        yield chunk
+                    return # Success
+                else:
+                    if not self.client:
+                        yield f"data: {json.dumps({'error': 'Client not initialized'})}\n\n"
+                        return
+
+                    def get_stream():
+                        with self._client_lock:
+                            return self.client.chat.completions.create(
+                                model=self.model_name,
+                                messages=[{"role": "user", "content": judge_prompt}],
+                                stream=True,
+                                stream_options={"include_usage": True}
+                            )
+
+                    stream = await anyio.to_thread.run_sync(get_stream)
+
+                    content_buffer = []
+                    final_usage = None
+                    
+                    while True:
                         try:
-                            d = json.loads(chunk[6:])
-                            if "usage" in d:
-                                u = d["usage"]
-                                for k in usage_total: usage_total[k] += u[k]
-                        except: pass
-                    yield chunk
-            else:
-                if not self.client:
-                    yield f"data: {json.dumps({'error': 'Client not initialized'})}\n\n"
-                    return
+                            chunk = await anyio.to_thread.run_sync(next, stream, None)
+                            if chunk is None: break
 
-                with self._client_lock:
-                    stream = self.client.chat.completions.create(
-                        model=self.model_name,
-                        messages=[{"role": "user", "content": judge_prompt}],
-                        stream=True,
-                        stream_options={"include_usage": True}
-                    )
+                            if hasattr(chunk, 'usage') and chunk.usage:
+                                final_usage = {
+                                    "prompt_tokens": chunk.usage.prompt_tokens,
+                                    "completion_tokens": chunk.usage.completion_tokens,
+                                    "total_tokens": chunk.usage.total_tokens
+                                }
 
-                content_buffer = []
-                final_usage = None
-                
-                for chunk in stream:
-                    if hasattr(chunk, 'usage') and chunk.usage:
-                        final_usage = {
-                            "prompt_tokens": chunk.usage.prompt_tokens,
-                            "completion_tokens": chunk.usage.completion_tokens,
-                            "total_tokens": chunk.usage.total_tokens
-                        }
+                            if chunk.choices and len(chunk.choices) > 0:
+                                c = chunk.choices[0].delta.content
+                                if c:
+                                    content_buffer.append(c)
+                                    yield f"data: {json.dumps({'content': c})}\n\n"
+                        except StopIteration:
+                            break
 
-                    if chunk.choices and len(chunk.choices) > 0:
-                        c = chunk.choices[0].delta.content
-                        if c:
-                            content_buffer.append(c)
-                            yield f"data: {json.dumps({'content': c})}\n\n"
+                    if final_usage:
+                        for k in usage_total: 
+                            usage_total[k] += final_usage[k]
+                    
+                    avg_duration = sum(durations) / len(durations) if durations else 0
+                    duration_judge = round(time.time() - start_judge, 2)
 
-                if final_usage:
-                    for k in usage_total: 
-                        usage_total[k] += final_usage[k]
-                
-                avg_duration = sum(durations) / len(durations) if durations else 0
-                duration_judge = round(time.time() - start_judge, 2)
+                    yield f"data: {json.dumps({
+                        'done': True, 'progress': 100,
+                        'usage': usage_total,
+                        'model': self.model_name,
+                        'provider': self.provider,
+                        'cost_estimate': self._calculate_cost(usage_total.get('prompt_tokens', 0), usage_total.get('completion_tokens', 0)),
+                        'duration_seconds': round(avg_duration + duration_judge, 2),
+                        'is_enhanced': True,
+                        'draft_count': len(drafts),
+                        'format': '3_sections_consolidated'
+                    })}\n\n"
+                    return # Success
 
-                yield f"data: {json.dumps({
-                    'done': True, 'progress': 100,
-                    'usage': usage_total,
-                    'model': self.model_name,
-                    'provider': self.provider,
-                    'cost_estimate': self._calculate_cost(usage_total.get('prompt_tokens', 0), usage_total.get('completion_tokens', 0)),
-                    'duration_seconds': round(avg_duration + duration_judge, 2),
-                    'is_enhanced': True,
-                    'draft_count': len(drafts),
-                    'format': '3_sections_consolidated'
-                })}\n\n"
-
-        except Exception as e:
-            yield f"data: {json.dumps({'error': f'Judging failed: {str(e)}'})}\n\n"
+            except Exception as e:
+                last_error = str(e)
+                print(f"[RETRY_JUDGE] Attempt {attempt+1} failed: {last_error}")
+                if attempt < max_attempts - 1:
+                    await anyio.sleep(2) # Brief pause before retry
+                else:
+                    # Final attempt fallback to NON-STREAMING if available
+                    yield f"data: {json.dumps({'status': 'Streaming failed. Attempting stable non-streaming synthesis...', 'progress': 90})}\n\n"
+                    try:
+                        # Re-use non-streaming summarization logic but with judge prompt
+                        def run_non_stream():
+                            with self._client_lock:
+                                return self.client.chat.completions.create(
+                                    model=self.model_name,
+                                    messages=[{"role": "user", "content": judge_prompt}],
+                                    stream=False
+                                )
+                        
+                        res_obj = await anyio.to_thread.run_sync(run_non_stream)
+                        content = res_obj.choices[0].message.content
+                        u = res_obj.usage
+                        
+                        for k in usage_total: 
+                            usage_total[k] += getattr(u, k, 0)
+                            
+                        yield f"data: {json.dumps({'content': content})}\n\n"
+                        yield f"data: {json.dumps({
+                            'done': True, 'progress': 100,
+                            'usage': usage_total,
+                            'model': self.model_name,
+                            'provider': self.provider,
+                            'is_enhanced': True,
+                            'is_fallback_used': True,
+                            'duration_seconds': round(time.time() - start_judge, 2)
+                        })}\n\n"
+                    except Exception as e2:
+                        yield f"data: {json.dumps({'error': f'All synthesis attempts failed. Last error: {str(e2)}'})}\n\n"

@@ -146,7 +146,7 @@ class ElaborationRequest(BaseModel):
     base_url: Optional[str] = None
 
 @app.post("/api/summarize")
-def summarize_book(req: SummarizationRequest):
+async def summarize_book(req: SummarizationRequest):
     # Determine API Key & Provider from request or config
     config = config_manager.load_config()
     
@@ -178,7 +178,7 @@ def summarize_book(req: SummarizationRequest):
     )
 
 @app.post("/api/synthesize")
-def synthesize_summaries(req: SynthesisRequest):
+async def synthesize_summaries(req: SynthesisRequest):
     data = storage_manager.get_all_summaries()
     
     # Extract draf contents based on IDs with validation
@@ -243,8 +243,8 @@ def synthesize_summaries(req: SynthesisRequest):
     
     # Perform streaming synthesis
     
-    def event_generator():
-        for update in summarizer.summarize_synthesize(title, author, genre, year, drafts, diversity_analysis=diversity_analysis):
+    async def event_generator():
+        async for update in summarizer.summarize_synthesize(title, author, genre, year, drafts, diversity_analysis=diversity_analysis):
             if "error" in update:
                 yield f"data: {json.dumps(update)}\n\n"
                 break
