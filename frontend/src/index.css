@@ -666,3 +666,85 @@ option {
   transform: scale(1.5);
   box-shadow: 0 0 8px currentColor;
 }
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .container {
+    padding: 1.5rem 1rem;
+  }
+
+  .glass-card {
+    padding: 1.25rem;
+  }
+
+  .modal-overlay {
+    padding: 1rem;
+  }
+
+  /* Adjust typography for mobile */
+  h1 {
+    font-size: 2.25rem !important;
+  }
+
+  .title-gradient {
+    letter-spacing: -0.5px;
+  }
+
+  /* Responsive Grids */
+  .mobile-stack {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+
+  /* Sticky Header Adjustments */
+  .sticky-summary-header.is-stuck {
+    width: 95%;
+    height: auto;
+    min-height: 45px;
+    padding: 0.5rem 1rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .sticky-summary-header.is-stuck .header-title {
+    font-size: 0.85rem;
+    line-height: 1.2;
+  }
+
+  .sticky-summary-header.is-stuck .header-author {
+    font-size: 0.7rem !important;
+  }
+
+  /* Library Grid */
+  #library-content>div {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important;
+    gap: 1rem !important;
+  }
+
+  #library-content img {
+    height: 180px !important;
+  }
+
+  #library-content .glass-card>div:first-of-type {
+    height: 180px !important;
+  }
+
+  /* Searchable Select on Mobile */
+  .searchable-select-menu {
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 1.75rem !important;
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+  }
+}

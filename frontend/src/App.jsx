@@ -187,7 +187,7 @@ const CoverSelectionModal = ({ isOpen, book, onClose, onSave }) => {
 
         <div className="input-group">
           <label>Cari Kandidat Sampul</label>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div className="mobile-stack" style={{ display: 'flex', gap: '0.5rem' }}>
             <input
               type="text"
               className="input-field"
@@ -307,9 +307,9 @@ const SkeletonSummary = ({ status, progress, onStop }) => (
       </div>
     )}
 
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', padding: progress > 0 ? '1rem 0 0 0' : '0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div className="spinner" style={{ width: '20px', height: '20px' }}></div>
+    <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', padding: progress > 0 ? '1rem 0 0 0' : '0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+        <div className="spinner" style={{ width: '20px', height: '20px', flexShrink: 0 }}></div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <span style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
             {status || "Initializing intelligence synthesis engine..."}
@@ -324,7 +324,7 @@ const SkeletonSummary = ({ status, progress, onStop }) => (
       <button
         onClick={onStop}
         className="btn-secondary"
-        style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+        style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
       >
         <X size={14} /> Batal
       </button>
@@ -1664,8 +1664,56 @@ function App() {
         )}
 
         {/* Header */}
-        <header style={{ textAlign: 'center', marginBottom: '2rem', position: 'relative' }}>
-          <div style={{ position: 'absolute', right: 0, top: 0, display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <header style={{
+          textAlign: 'center',
+          marginBottom: '2rem',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '1rem'
+        }}>
+          {/* Mobile-friendly Header Top Bar (Icons & Settings) */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            width: '100%',
+            flexWrap: 'wrap',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={() => { handleReset(); setShowSettings(false); }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+                title="Initialize New Synthesis"
+              >
+                <Home size={22} />
+              </button>
+              <button
+                onClick={() => {
+                  setShowHistory(!showHistory);
+                  setShowSettings(false);
+                  setShowLibrary(false);
+                }}
+                style={{ background: 'none', border: 'none', color: showHistory ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+                title="Research History"
+              >
+                <History size={22} />
+              </button>
+              <button
+                onClick={() => {
+                  setShowLibrary(!showLibrary);
+                  setShowSettings(false);
+                  setShowHistory(false);
+                }}
+                style={{ background: 'none', border: 'none', color: showLibrary ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+                title="Archived Intel (Saved)"
+              >
+                <BookOpen size={22} />
+              </button>
+            </div>
+
             {/* API Status (Now triggers Settings) */}
             <div
               onClick={() => setShowSettings(!showSettings)}
@@ -1674,12 +1722,11 @@ function App() {
                 alignItems: 'center',
                 gap: '0.6rem',
                 cursor: 'pointer',
-                padding: '0.4rem 0.8rem',
+                padding: '0.4rem 0.6rem',
                 borderRadius: '8px',
                 border: showSettings ? '1px solid var(--text-primary)' : '1px solid var(--border-color)',
                 background: showSettings ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
                 transition: 'all 0.2s',
-                position: 'relative'
               }}
               className="hover-card"
               title="Klik untuk Pengaturan AI"
@@ -1692,65 +1739,33 @@ function App() {
                 boxShadow: (provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : ollamaBaseUrl)) && keyValid !== false ? '0 0 8px var(--success)' : 'none'
               }}></div>
               <span
-                title={keyValid !== false ? `${provider}: ${provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)}` : "Konfigurasi AI"}
                 style={{
-                  fontSize: '0.75rem',
+                  fontSize: '0.7rem',
                   color: showSettings ? 'var(--text-primary)' : 'var(--text-secondary)',
                   fontWeight: 500,
-                  maxWidth: '180px',
+                  maxWidth: '120px',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap'
                 }}
               >
-                {keyValid !== false ? `${provider}: ${provider === 'OpenRouter' ? openRouterModel.split('/').pop().split(':')[0] : (provider === 'Groq' ? groqModel : ollamaModel)}` : "Konfigurasi AI"}
+                {keyValid !== false ? `${provider}: ${provider === 'OpenRouter' ? openRouterModel.split('/').pop().split(':')[0] : (provider === 'Groq' ? groqModel : ollamaModel)}` : "Config"}
               </span>
-              {validatingKey && <RefreshCw size={12} className="spin-animation" style={{ color: 'var(--text-secondary)' }} />}
+              {validatingKey && <RefreshCw size={10} className="spin-animation" style={{ color: 'var(--text-secondary)' }} />}
             </div>
           </div>
 
-          <div style={{ position: 'absolute', left: 0, top: 0, display: 'flex', gap: '1rem' }}>
-            <button
-              onClick={() => { handleReset(); setShowSettings(false); }}
-              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
-              title="Initialize New Synthesis"
-            >
-              <Home size={24} />
-            </button>
-            <button
-              onClick={() => {
-                setShowHistory(!showHistory);
-                setShowSettings(false);
-                setShowLibrary(false);
-              }}
-              style={{ background: 'none', border: 'none', color: showHistory ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer' }}
-              title="Research History"
-            >
-              <History size={24} />
-            </button>
-            <button
-              onClick={() => {
-                setShowLibrary(!showLibrary);
-                setShowSettings(false);
-                setShowHistory(false);
-              }}
-              style={{ background: 'none', border: 'none', color: showLibrary ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer' }}
-              title="Archived Intel (Saved)"
-            >
-              <BookOpen size={24} />
-            </button>
+          <div style={{ marginTop: '0.5rem' }}>
+            <h1 style={{ margin: '0' }}>
+              <span className="title-gradient">Pustaka+</span>
+            </h1>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '500', marginTop: '0.25rem', letterSpacing: '1px' }}>
+              Advanced Synthetic Analytical Briefing
+            </p>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.7, marginTop: '0.25rem', fontStyle: 'italic', maxWidth: '400px', margin: '0.5rem auto' }}>
+              Deep-tier knowledge synthesis engine for high-stakes intelligence.
+            </p>
           </div>
-
-          <h1 style={{ fontSize: '3rem', margin: '0 0 0.5rem 0' }}>
-            <span className="title-gradient">Pustaka+</span>
-          </h1>
-          <p style={{ fontSize: '1rem', color: 'var(--text-secondary)', fontWeight: '500', marginTop: '-0.5rem', letterSpacing: '1px' }}>
-            Advanced Synthetic Analytical Briefing
-          </p>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', opacity: 0.7, marginTop: '0.25rem', fontStyle: 'italic' }}>
-            Deep-tier knowledge synthesis engine for high-stakes intelligence.
-          </p>
-
         </header>
 
         {/* Settings Modal/Panel */}
@@ -1955,7 +1970,7 @@ function App() {
                   <Share2 size={18} color="var(--accent-color)" />
                   Konfigurasi Notion
                 </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                       Notion API Key
@@ -2224,7 +2239,7 @@ function App() {
         {!verificationResult && !currentBook && !showSettings && !showLibrary && !showHistory && (
           <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem' }}>
             <form onSubmit={handleVerify}>
-              <div style={{ display: 'grid', gridTemplateColumns: showIsbn ? '1fr 1fr' : '1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: showIsbn ? '1fr 1fr' : '1fr', gap: '1rem', marginBottom: '1rem' }}>
                 {showIsbn && (
                   <div>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>ISBN</label>
@@ -2277,7 +2292,7 @@ function App() {
                   {showIsbn ? "Sembunyikan ISBN" : "Tampilkan Opsi ISBN"}
                 </button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem' }}>
+              <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem' }}>
                 <button type="submit" className="btn-primary" disabled={loading} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                   {loading ? <><span className="spinner"></span> Validating Source...</> : <><Search size={18} style={{ marginRight: '8px' }} /> Analyze Book Source</>}
                 </button>
@@ -2621,16 +2636,16 @@ function App() {
               ref={headerRef}
               className={`sticky-summary-header ${isStuck ? 'is-stuck' : ''}`}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
                   {/* Book Cover in Header - Container controlled by CSS transitions */}
-                  <div className="book-cover-container">
+                  <div className="book-cover-container" style={{ marginLeft: isStuck ? 0 : '10px' }}>
                     {currentBook && currentBook.image_url ? (
                       <img
                         src={getImageUrl(currentBook.image_url, currentBook.last_updated)}
                         alt="Cover"
                         className="sharp-image"
-                        style={{ width: '100%', height: '120px', marginLeft: '20px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
+                        style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
                         onError={(e) => e.target.style.display = 'none'}
                       />
                     ) : (
@@ -2639,7 +2654,7 @@ function App() {
                           src={getImageUrl(verificationResult.sources.find(s => s.image_url).image_url, verificationResult.timestamp)}
                           alt="Cover"
                           className="sharp-image"
-                          style={{ width: '100%', height: '120px', marginLeft: '20px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
+                          style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
                           onError={(e) => e.target.style.display = 'none'}
                         />
                       )
@@ -2684,21 +2699,17 @@ function App() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                <div style={{ display: 'flex', gap: '0.35rem', flexShrink: 0 }}>
                   {summarizing && summary && (
                     <button
                       onClick={() => abortControllerRef.current?.abort()}
                       className="btn-danger"
                       style={{
-                        fontSize: '0.8rem',
-                        padding: '0.35rem 1rem',
-                        marginLeft: '5px',
-                        marginTop: '2px',
-                        marginBottom: '2px',
-                        marginRight: '20px'
+                        fontSize: '0.75rem',
+                        padding: '0.35rem 0.75rem',
                       }}
                     >
-                      <X size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '6px' }} /> {!isStuck && "Stop"}
+                      <X size={isStuck ? 13 : 14} style={{ marginRight: isStuck ? '0' : '4px' }} /> {!isStuck && "Stop"}
                     </button>
                   )}
                   {!summarizing && summary && (
@@ -2708,11 +2719,7 @@ function App() {
                         className="btn-secondary"
                         title="Generate Ulang"
                         style={{
-                          padding: '0.35rem 0.7rem',
-                          marginLeft: '5px',
-                          marginTop: '2px',
-                          marginBottom: '2px',
-                          marginRight: '2px',
+                          padding: '0.35rem 0.6rem',
                         }}
                       >
                         <RotateCcw size={14} />
@@ -2722,11 +2729,7 @@ function App() {
                         className="btn-secondary"
                         title={copied ? "Tersalin!" : "Salin Rangkuman"}
                         style={{
-                          padding: '0.35rem 0.7rem',
-                          marginLeft: '5px',
-                          marginTop: '2px',
-                          marginBottom: '2px',
-                          marginRight: '2px',
+                          padding: '0.35rem 0.6rem',
                           borderColor: copied ? 'var(--success)' : ''
                         }}
                       >
