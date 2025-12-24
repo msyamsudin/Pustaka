@@ -2805,12 +2805,7 @@ function App() {
                     }
                     if (content.startsWith('claim-tag:')) {
                       const tag = content.replace('claim-tag:', '');
-                      let color = '#ccc';
-
-                      if (tag === 'Parafrasa Penulis') color = '#60a5fa';
-                      else if (tag === 'Interpretasi Analitis') color = '#c084fc';
-                      else if (tag === 'Inferensi Historis') color = '#fbbf24';
-                      else if (tag === 'Spekulasi Model') color = '#f472b6';
+                      let color = 'var(--accent-color)';
 
                       return (
                         <span
@@ -2826,10 +2821,7 @@ function App() {
               >
                 {summary ? summary
                   .replace(/\[\[(.*?)\]\]/g, '`intel-synth:$1`')
-                  .replace(/\[Parafrasa Penulis\]/g, '`claim-tag:Parafrasa Penulis`')
-                  .replace(/\[Interpretasi Analitis\]/g, '`claim-tag:Interpretasi Analitis`')
-                  .replace(/\[Inferensi Historis\]/g, '`claim-tag:Inferensi Historis`')
-                  .replace(/\[Spekulasi Model\]/g, '`claim-tag:Spekulasi Model`')
+                  .replace(/\[Analisis Terintegrasi\]/g, '`claim-tag:Analisis Terintegrasi`')
                   : ""}
               </ReactMarkdown>
               {summarizing && summary && (

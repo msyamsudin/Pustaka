@@ -184,10 +184,7 @@ Your goal is to transform content into 3 CONSOLIDATED SUPER-SECTIONS.
 
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
-- [Parafrasa Penulis] : Summary/reformulation of source.
-- [Interpretasi Analitis] : Conceptual reading/analysis by you.
-- [Inferensi Historis] : Derived from historical context.
-- [Spekulasi Model] : Modern assumption/estimation/analogy.
+- [Analisis Terintegrasi] : Key claim, analytical insight, or model synthesis.
 </claim_tagging_policy>
 
 <output_structure>
@@ -239,10 +236,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
-- [Parafrasa Penulis] : Summary/reformulation of source.
-- [Interpretasi Analitis] : Conceptual reading/analysis by you.
-- [Inferensi Historis] : Derived from historical context.
-- [Spekulasi Model] : Modern assumption/estimation/analogy.
+- [Analisis Terintegrasi] : Key claim, analytical insight, or model synthesis.
 </claim_tagging_policy>
 
 <instructions>
@@ -252,7 +246,7 @@ Explicitly label every important claim/statement with ONE of these tags:
 4. Eliminate redundant strategic steps or limitations unless they are vital to positioning.
 5. Output ONLY the 3 sections below.
 6. Body content MUST be in Bahasa Indonesia (Formal-Academic). Headers MUST remain in English.
-8. APPLY CLAIM TAGGING: Label key statements with [Parafrasa Penulis], [Interpretasi Analitis], [Inferensi Historis], or [Spekulasi Model].
+8. APPLY CLAIM TAGGING: Label key statements with [Analisis Terintegrasi].
 </instructions>
 
 <output_structure>
@@ -508,10 +502,7 @@ Explicitly label every important claim/statement with ONE of these tags:
 
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
-- [Parafrasa Penulis] : Summary/reformulation of source.
-- [Interpretasi Analitis] : Conceptual reading/analysis by you.
-- [Inferensi Historis] : Derived from historical context.
-- [Spekulasi Model] : Modern assumption/estimation/analogy.
+- [Analisis Terintegrasi] : Key claim, analytical insight, or model synthesis.
 </claim_tagging_policy>
 
 <instructions>
@@ -519,7 +510,7 @@ Explicitly label every important claim/statement with ONE of these tags:
 2. High density.
 3. Use `[[...]]` for data.
 4. Do not include header (##) in response.
-5. APPLY CLAIM TAGGING: Use [Parafrasa Penulis], [Interpretasi Analitis], [Inferensi Historis], [Spekulasi Model].
+5. APPLY CLAIM TAGGING: Use [Analisis Terintegrasi].
 </instructions>"""
 
     def _normalize_section_name(self, name: str) -> str:
