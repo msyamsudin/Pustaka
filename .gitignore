@@ -36,3 +36,10 @@ Thumbs.db
 *.suo
 *.sln
 *.sw?
+
+# Remote Access / Cloudflare
+tools/
+*.env
+frontend/.env
+backend/.env
+start_tunnel.bat
