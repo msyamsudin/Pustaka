@@ -161,14 +161,15 @@ class BookSummarizer:
                          context_description: str, source_note: str, 
                          partial_content: Optional[str] = None, 
                          mode: str = "summarize", 
-                         drafts: Optional[List[str]] = None) -> str:
+                         drafts: Optional[List[str]] = None,
+                         search_context: Optional[str] = None) -> str:
         
         if not title or not author: raise BookSummarizerError("Missing title/author")
         
         if mode == "judge" and drafts:
             return self._build_judge_prompt(title, author, genre, year, drafts)
 
-        return self._build_summarize_prompt(title, author, genre, year, context_description, source_note, partial_content)
+        return self._build_summarize_prompt(title, author, genre, year, context_description, source_note, partial_content, search_context)
 
     def _build_summarize_prompt(self, title: str, author: str, genre: str, year: str, 
                                 context: str, source: str, partial: Optional[str], 
@@ -198,8 +199,14 @@ Your goal is to transform content into 3 CONSOLIDATED PRIMARY SECTIONS.
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
 - [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
-- [Rujukan Eksternal: Nama Sumber] : Information or context derived from external search/Wikipedia. Replace "Nama Sumber" with the actual reference name (e.g., Wikipedia, site name).
+- [Rujukan Eksternal: Nama Sumber] : Information or context derived from external search/Wikipedia. MUST be used for scholarly context (e.g., [Rujukan Eksternal: Brill/JSTOR]).
 </claim_tagging_policy>
+
+<scholarly_policy>
+1. Padukan berbagai perspektif, terutama membandingkan teks primer dengan historiografi akademik.
+2. Jika merujuk sumber eksternal, beri prioritas pada edisi kritis, tokoh akademik, atau temuan peer-reviewed.
+3. Hindari parafrasa dangkal; fokus pada "intellectual positioning" dan bobot historis dari argumen.
+</scholarly_policy>
 
 <output_structure>
 CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIONS.
@@ -216,7 +223,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
 - **Reasoning Blueprint**: 
   A. Gap Identified (What's missing?)
   B. Methodology/Proposed Solution (Author's approach)
-  C. Synthesis & Rational Conclusions (Proven result)
+  C. Konvergensi Argumen & Simpulan Rasional (Proven result)
 
 ## 3. MARKET & INTELLECTUAL POSITIONING
 [Structure: Contextual Analysis]
@@ -244,7 +251,7 @@ CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIO
         
         return f"""<role>SENIOR EDITOR: Consolidate content into 3 PRIMARY SECTIONS.</role>
 
-<task>Synthesize {len(valid_drafts)} drafts for: "{title}" by {author}.</task>
+<task>Meramu dan mensinkronisasi {len(valid_drafts)} draf untuk buku: "{title}" karya {author}.</task>
 
 <drafts>{formatted}</drafts>
 
@@ -343,7 +350,8 @@ Explicitly label every important claim/statement with ONE of these tags:
     # --- SYNTHESIS LOGIC (UPDATED FOR 3 SECTIONS) ---
 
     async def summarize_synthesize(self, title: str, author: str, genre: str, year: str, 
-                             drafts: List[str], diversity_analysis: Dict = None) -> AsyncGenerator[Dict, None]:
+                             drafts: List[str], diversity_analysis: Dict = None, 
+                             search_results: Optional[Dict] = None) -> AsyncGenerator[Dict, None]:
         
         print(f"=== STARTING SYNTHESIS for '{title}' ===")
         if not drafts: 
@@ -440,6 +448,11 @@ Explicitly label every important claim/statement with ONE of these tags:
 
         content = "\n".join(final_parts).strip()
         
+        # Append references
+        refs_markdown = self._generate_references_markdown(search_results if search_results else {})
+        if refs_markdown:
+            content += refs_markdown
+        
         if len(content) < 500:
             reason = "Content length too short."
             if errors_count == len(section_tasks):
@@ -501,13 +514,12 @@ Explicitly label every important claim/statement with ONE of these tags:
         
         # HINTS DIPERBARUI HANYA UNTUK 3 SECTION
         hints = {
-            "EXECUTIVE SUMMARY & CORE THESIS": "Merge Summary, Key Arguments, and Iconic Quote into one cohesive section.",
-            "ANALYTICAL FRAMEWORK": "Merge Glossary definitions and Reasoning Blueprint (Gap, Method, Conclusion) here.",
-            "MARKET & INTELLECTUAL POSITIONING": "Focus on competitors, USP, and intellectual heritage."
-            # 'STRATEGIC ACTION PLAN' dan 'CRITICAL LIMITATIONS' dihapus dari hints
+            "EXECUTIVE SUMMARY & CORE THESIS": "Integrasikan Summary, Argumen Kunci, dan Kutipan Ikonik menjadi satu bagian yang kohesif.",
+            "ANALYTICAL FRAMEWORK": "Gabungkan definisi Glosarium dan Blueprint Penalaran (Celah, Metode, Konvergensi) di sini.",
+            "MARKET & INTELLECTUAL POSITIONING": "Fokus pada kompetitor, USP, dan warisan intelektual."
         }
         
-        hint = hints.get(name, "Synthesize the content for this section.")
+        hint = hints.get(name, "Harmonisasikan konten untuk bagian ini.")
         
         return f"""<role>ACADEMIC EDITOR</role>
 <context>BOOK: "{t}" by {a}</context>
@@ -606,6 +618,34 @@ Explicitly label every important claim/statement with ONE of these tags:
         text = self._regex_patterns['excess_newlines'].sub("\n\n", text)
         return text.strip()
 
+    def _generate_references_markdown(self, search_results: Dict) -> str:
+        """Generates a structured tag for external references for premium frontend rendering."""
+        if not search_results: return ""
+        
+        brave = search_results.get('brave_results', [])
+        wiki_summary = search_results.get('wikipedia_summary')
+        wiki_url = search_results.get('wikipedia_url')
+        
+        if not brave and not wiki_summary: return ""
+        
+        # We use a special tag that the frontend will parse. 
+        # We don't include the markdown header here so the frontend has full control.
+        lines = ["", "[REF_SECTION]"]
+        
+        idx = 1
+        if wiki_summary:
+            title = wiki_summary.split('.')[0].strip() if '.' in wiki_summary else wiki_summary.strip()
+            title = (title[:100] + '...') if len(title) > 100 else title
+            lines.append(f"{idx}. **Wikipedia**: [{title}]({wiki_url})")
+            idx += 1
+            
+        for res in brave:
+            lines.append(f"{idx}. **Search**: [{res['title']}]({res['url']})")
+            idx += 1
+        
+        lines.append("[/REF_SECTION]")
+        return "\n".join(lines)
+
     def _calculate_cost(self, p_t: int, c_t: int) -> Dict:
         if self.model_name.endswith(":free"): return {"total_usd": 0.0, "total_idr": 0, "currency": "USD", "is_free": True}
         pricing = self._get_pricing_info()
@@ -662,17 +702,37 @@ Explicitly label every important claim/statement with ONE of these tags:
 
     # --- PUBLIC METHODS (Stream & Summarize Skeletons) ---
     
-    def summarize(self, book_metadata: List[Dict]) -> Dict:
+    def summarize(self, book_metadata: List[Dict], search_context: Optional[str] = None) -> Dict:
         """Non-streaming summarize"""
         try:
             m = self._extract_metadata(book_metadata)
-            p = self._get_full_prompt(m["title"], m["author"], m["genre"], m["year"], m["description"], "info")
+            
+            search_results = {}
+            if self.search_aggregator and not search_context:
+                try:
+                    def evaluation_wrapper(results, book_info):
+                        return self._evaluate_search_relevance(results, book_info)
+                    
+                    search_results = self.search_aggregator.search(
+                        m["title"], m["author"], m.get("genre", ""),
+                        evaluation_wrapper
+                    )
+                    search_context = self.search_aggregator.format_for_prompt(search_results)
+                except Exception as e:
+                    print(f"[SEARCH_WARNING] Non-streaming search failed: {e}")
+
+            p = self._get_full_prompt(m["title"], m["author"], m["genre"], m["year"], m["description"], "info", search_context=search_context)
             if not p: return {"error": "Prompt failed"}
             
             start = time.time()
             if self.provider == "Ollama":
                 r = self._summarize_ollama(p, start)
-                if "content" in r: r["content"] = self._normalize_output_format(r["content"])
+                if "content" in r: 
+                    r["content"] = self._normalize_output_format(r["content"])
+                    # Append references
+                    refs_markdown = self._generate_references_markdown(search_results if search_results else {})
+                    if refs_markdown:
+                        r["content"] += refs_markdown
                 return r
             
             if not self.client: return {"error": "No client"}
@@ -680,14 +740,97 @@ Explicitly label every important claim/statement with ONE of these tags:
                 c = self.client.chat.completions.create(model=self.model_name, messages=[{"role": "user", "content": p}])
             
             u = c.usage
-            return {
-                "content": self._normalize_output_format(self._clean_output(c.choices[0].message.content)),
+            final_content = self._normalize_output_format(self._clean_output(c.choices[0].message.content))
+            
+            # Append references
+            refs_markdown = self._generate_references_markdown(search_results if search_results else {})
+            if refs_markdown:
+                final_content += refs_markdown
+                
+            res = {
+                "content": final_content,
                 "usage": {"prompt_tokens": u.prompt_tokens, "completion_tokens": u.completion_tokens, "total_tokens": u.total_tokens},
                 "model": self.model_name, "provider": self.provider,
                 "cost_estimate": self._calculate_cost(u.prompt_tokens, u.completion_tokens),
                 "duration_seconds": round(time.time() - start, 2)
             }
+            if search_results and search_results.get("search_metadata"):
+                res["search_metadata"] = search_results["search_metadata"]
+                res["search_sources"] = {
+                    'brave': [{'title': r['title'], 'url': r['url']} for r in search_results.get('brave_results', [])],
+                    'wikipedia': {
+                        'title': search_results.get('wikipedia_summary', '')[:100] + '...',
+                        'url': search_results.get('wikipedia_url', '')
+                    } if search_results.get('wikipedia_summary') else None
+                }
+            return res
         except Exception as e: return {"error": str(e)}
+
+    def _evaluate_search_relevance(self, results: List[Dict], book_info: Dict) -> List[bool]:
+        """
+        Uses AI to evaluate the relevance and quality of search results.
+        Returns a list of booleans corresponding to each result.
+        """
+        if not results: return []
+        
+        # Prepare a very compact representation of results for evaluation
+        formatted_results = []
+        for i, r in enumerate(results):
+            formatted_results.append(f"[{i}] Title: {r.get('title')}\nSnippet: {r.get('snippet')[:200]}\nURL: {r.get('url')}")
+        
+        results_str = "\n---\n".join(formatted_results)
+        
+        prompt = f"""<role>SCHOLARLY RELEVANCE EVALUATOR</role>
+<context>Book: "{book_info.get('title')}" by {book_info.get('author')}</context>
+<task>Evaluate the ACADEMIC WEIGHT and SCHOLARLY DEPTH of the following search results.</task>
+
+<results>
+{results_str}
+</results>
+
+<instructions>
+1. Evaluate each result based on its credibility and depth.
+2. Prioritize: Journal articles, academic publishers (e.g. Brill, Oxford, KITLV), critical reviews by scholars, historical manuscripts, or historiography.
+3. Penalize: Generic blog posts (WordPress, Blogspot), book catalogs (Gramedia, Play Store), or shallow summaries.
+4. Return a JSON object with a "relevance" key containing an array of booleans.
+5. True = High Quality/Scholarly/Critical Analysis.
+6. False = Shallow/Commerce/Weak Blog.
+6. Example: {{"relevance": [true, false, true]}}
+</instructions>
+RESPONSE ONLY WITH THE JSON OBJECT."""
+
+        try:
+            start_time = time.time()
+            if self.provider == "Ollama":
+                res = self._summarize_ollama(prompt, start_time)
+                content = res.get("content", "{}")
+            else:
+                if not self.client:
+                    print("[RELEVANCE_EVAL_WARNING] AI client not initialized for evaluation, skipping AI check.")
+                    return [True] * len(results)
+                    
+                with self._client_lock:
+                    c = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.0,
+                        response_format={"type": "json_object"} if "gemini" not in self.model_name.lower() else None
+                    )
+                content = c.choices[0].message.content
+            
+            # Parse JSON object
+            data = json.loads(content)
+            relevance_mask = data.get("relevance")
+            
+            if isinstance(relevance_mask, list) and len(relevance_mask) == len(results):
+                return [bool(x) for x in relevance_mask]
+            
+            print(f"[RELEVANCE_EVAL_DEBUG] Fallback: AI response was not a valid object with 'relevance' list: {content}")
+        except Exception as e:
+            print(f"[RELEVANCE_EVAL_ERROR] {e}")
+            
+        # Fallback: keep everything if AI fails, let manual excludes handle it
+        return [True] * len(results)
 
     async def summarize_stream(self, book_metadata: List[Dict], partial_content: Optional[str] = None) -> AsyncGenerator[str, None]:
         """Streaming summarize"""
@@ -697,17 +840,23 @@ Explicitly label every important claim/statement with ONE of these tags:
             # Perform search if enabled
             search_context_str = ""
             search_metadata = {}
+            search_results = {}
             if self.search_aggregator:
-                yield f"data: {json.dumps({'status': 'Searching external sources...', 'progress': 3})}\n\n"
+                yield f"data: {json.dumps({'status': 'Searching and verifying external sources...', 'progress': 3})}\n\n"
                 try:
+                    # Define a synchronous wrapper for the evaluation callback
+                    def evaluation_wrapper(results, book_info):
+                        return self._evaluate_search_relevance(results, book_info)
+                    
                     search_results = await anyio.to_thread.run_sync(
                         self.search_aggregator.search, 
-                        m["title"], m["author"], m.get("genre", "")
+                        m["title"], m["author"], m.get("genre", ""),
+                        evaluation_wrapper
                     )
                     search_context_str = self.search_aggregator.format_for_prompt(search_results)
                     search_metadata = search_results.get("search_metadata", {})
                     if search_metadata.get("total_sources", 0) > 0:
-                        print(f"[SEARCH] Found {search_metadata['total_sources']} external sources in {search_metadata.get('search_duration_ms', 0)}ms")
+                        print(f"[SEARCH] Found {search_metadata['total_sources']} verified sources ({search_metadata.get('iterations', 1)} iterations)")
                 except Exception as e:
                     print(f"[SEARCH_WARNING] Search failed, continuing without enrichment: {e}")
             
@@ -720,7 +869,7 @@ Explicitly label every important claim/statement with ONE of these tags:
             
             start = time.time()
             if self.provider == "Ollama":
-                async for chunk in self._stream_ollama(p, start):
+                async for chunk in self._stream_ollama(p, start, search_results):
                     yield chunk
             else:
                 if not self.client: yield f"data: {json.dumps({'error': 'No client'})}\n\n"; return
@@ -754,14 +903,20 @@ Explicitly label every important claim/statement with ONE of these tags:
                             yield f"data: {json.dumps({'content': c})}\n\n"
                     except StopIteration:
                         break
+
+                # Append references to common markdown output
+                refs_markdown = self._generate_references_markdown(search_results if search_results else {})
+                if refs_markdown:
+                    yield f"data: {json.dumps({'content': refs_markdown})}\n\n"
                 
                 stats = {'done': True, 'duration_seconds': round(time.time()-start, 2), 'model': self.model_name, 'provider': self.provider}
                 if usage:
                     stats['usage'] = usage
                     stats['cost_estimate'] = self._calculate_cost(usage['prompt_tokens'], usage['completion_tokens'])
-                if search_metadata:
-                    stats['search_enriched'] = search_metadata.get('total_sources', 0) > 0
-                    stats['search_metadata'] = search_metadata
+                if search_metadata or (search_results and search_results.get("search_metadata")):
+                    actual_meta = search_metadata if search_metadata else search_results.get("search_metadata", {})
+                    stats['search_enriched'] = actual_meta.get('total_sources', 0) > 0
+                    stats['search_metadata'] = actual_meta
                     stats['search_sources'] = {
                         'brave': [{'title': r['title'], 'url': r['url']} for r in search_results.get('brave_results', [])],
                         'wikipedia': {
@@ -772,7 +927,7 @@ Explicitly label every important claim/statement with ONE of these tags:
                 yield f"data: {json.dumps(stats)}\n\n"
         except Exception as e: yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-    async def _stream_ollama(self, prompt: str, start: float) -> AsyncGenerator[str, None]:
+    async def _stream_ollama(self, prompt: str, start: float, search_results: Optional[Dict] = None) -> AsyncGenerator[str, None]:
         try:
             def make_request():
                 return requests.post(
@@ -795,6 +950,11 @@ Explicitly label every important claim/statement with ONE of these tags:
                     d = json.loads(line.decode('utf-8'))
                     if d.get("response"): yield f"data: {json.dumps({'content': d['response']})}\n\n"
                     if d.get("done"):
+                        # Append references before final stats
+                        refs_markdown = self._generate_references_markdown(search_results if search_results else {})
+                        if refs_markdown:
+                            yield f"data: {json.dumps({'content': refs_markdown})}\n\n"
+
                         yield f"data: {json.dumps({
                             'done': True, 
                             'duration_seconds': round(time.time()-start, 2), 
@@ -912,9 +1072,26 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
         usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         durations = []
         
+        # Perform search if enabled
+        search_context_str = ""
+        search_results = {}
+        if self.search_aggregator:
+            try:
+                def evaluation_wrapper(results, book_info):
+                    return self._evaluate_search_relevance(results, book_info)
+                
+                m = self._extract_metadata(book_metadata)
+                search_results = self.search_aggregator.search(
+                    m["title"], m["author"], m.get("genre", ""),
+                    evaluation_wrapper
+                )
+                search_context_str = self.search_aggregator.format_for_prompt(search_results)
+            except Exception as e:
+                print(f"[SEARCH_WARNING] Tournament search failed: {e}")
+
         # Phase 1: Generate Drafts Secara Paralel (Format 3 section baru)
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(n, 3)) as executor:
-            future_to_draft = {executor.submit(self.summarize, book_metadata): i for i in range(n)}
+            future_to_draft = {executor.submit(self.summarize, book_metadata, search_context_str): i for i in range(n)}
             
             for future in concurrent.futures.as_completed(future_to_draft):
                 try:
@@ -975,8 +1152,15 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
             avg_duration = sum(durations) / len(durations) if durations else 0
             duration_judge = round(time.time() - start_judge, 2)
 
-            return {
-                "content": self._normalize_output_format(final_content),
+            res_content = self._normalize_output_format(final_content)
+            
+            # Append references
+            refs_markdown = self._generate_references_markdown(search_results if search_results else {})
+            if refs_markdown:
+                res_content += refs_markdown
+                
+            res = {
+                "content": res_content,
                 "usage": usage_total,
                 "model": self.model_name,
                 "provider": self.provider,
@@ -986,6 +1170,16 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 "draft_count": len(drafts),
                 "format": "3_sections_consolidated"
             }
+            if search_results and search_results.get("search_metadata"):
+                res["search_metadata"] = search_results["search_metadata"]
+                res["search_sources"] = {
+                    'brave': [{'title': r['title'], 'url': r['url']} for r in search_results.get('brave_results', [])],
+                    'wikipedia': {
+                        'title': search_results.get('wikipedia_summary', '')[:100] + '...',
+                        'url': search_results.get('wikipedia_url', '')
+                    } if search_results.get('wikipedia_summary') else None
+                }
+            return res
         except Exception as e:
             return {
                 "error": f"Judging failed: {str(e)}", 
@@ -1008,13 +1202,34 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
 
         yield f"data: {json.dumps({'status': f'Generating {n} draft(s) (3-section format)...', 'progress': 5})}\n\n"
         
+        # Perform search if enabled for tournament mode as well
+        search_context_str = ""
+        search_results = {}
+        if self.search_aggregator:
+            yield f"data: {json.dumps({'status': 'Searching and verifying external scholarly sources...', 'progress': 7})}\n\n"
+            try:
+                def evaluation_wrapper(results, book_info):
+                    return self._evaluate_search_relevance(results, book_info)
+                
+                m = self._extract_metadata(book_metadata)
+                search_results = await anyio.to_thread.run_sync(
+                    self.search_aggregator.search, 
+                    m["title"], m["author"], m.get("genre", ""),
+                    evaluation_wrapper
+                )
+                search_context_str = self.search_aggregator.format_for_prompt(search_results)
+            except Exception as e:
+                print(f"[SEARCH_WARNING] Tournament search failed: {e}")
+
         # Phase 1: Draft Generation (Concurrent)
         async with anyio.create_task_group() as tg:
             send_stream, receive_stream = anyio.create_memory_object_stream()
             
             async def run_draft(idx):
                 try:
-                    res = await anyio.to_thread.run_sync(self.summarize, book_metadata)
+                    # Pass search_context_str if it exists
+                    search_context = search_context_str if 'search_context_str' in locals() else ""
+                    res = await anyio.to_thread.run_sync(self.summarize, book_metadata, search_context)
                     await send_stream.send(res)
                 except Exception as e:
                     await send_stream.send({"error": str(e)})
@@ -1061,7 +1276,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 start_judge = time.time()
                 
                 if self.provider == "Ollama":
-                    async for chunk in self._stream_ollama(judge_prompt, start_judge):
+                    async for chunk in self._stream_ollama(judge_prompt, start_judge, search_results):
                         if "done" in chunk:
                             try:
                                 d = json.loads(chunk[6:])
@@ -1110,6 +1325,11 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                         except StopIteration:
                             break
 
+                    # Append references
+                    refs_markdown = self._generate_references_markdown(search_results if search_results else {})
+                    if refs_markdown:
+                        yield f"data: {json.dumps({'content': refs_markdown})}\n\n"
+
                     if final_usage:
                         for k in usage_total: 
                             usage_total[k] += final_usage[k]
@@ -1117,7 +1337,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                     avg_duration = sum(durations) / len(durations) if durations else 0
                     duration_judge = round(time.time() - start_judge, 2)
 
-                    yield f"data: {json.dumps({
+                    stats = {
                         'done': True, 'progress': 100,
                         'usage': usage_total,
                         'model': self.model_name,
@@ -1127,7 +1347,17 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                         'is_enhanced': True,
                         'draft_count': len(drafts),
                         'format': '3_sections_consolidated'
-                    })}\n\n"
+                    }
+                    if search_results and search_results.get("search_metadata"):
+                        stats["search_metadata"] = search_results["search_metadata"]
+                        stats["search_sources"] = {
+                            'brave': [{'title': r['title'], 'url': r['url']} for r in search_results.get('brave_results', [])],
+                            'wikipedia': {
+                                'title': search_results.get('wikipedia_summary', '')[:100] + '...',
+                                'url': search_results.get('wikipedia_url', '')
+                            } if search_results.get('wikipedia_summary') else None
+                        }
+                    yield f"data: {json.dumps(stats)}\n\n"
                     return # Success
 
             except Exception as e:
@@ -1156,7 +1386,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                             usage_total[k] += getattr(u, k, 0)
                             
                         yield f"data: {json.dumps({'content': content})}\n\n"
-                        yield f"data: {json.dumps({
+                        stats = {
                             'done': True, 'progress': 100,
                             'usage': usage_total,
                             'model': self.model_name,
@@ -1164,6 +1394,16 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                             'is_enhanced': True,
                             'is_fallback_used': True,
                             'duration_seconds': round(time.time() - start_judge, 2)
-                        })}\n\n"
+                        }
+                        if search_results and search_results.get("search_metadata"):
+                            stats["search_metadata"] = search_results["search_metadata"]
+                            stats["search_sources"] = {
+                                'brave': [{'title': r['title'], 'url': r['url']} for r in search_results.get('brave_results', [])],
+                                'wikipedia': {
+                                    'title': search_results.get('wikipedia_summary', '')[:100] + '...',
+                                    'url': search_results.get('wikipedia_url', '')
+                                } if search_results.get('wikipedia_summary') else None
+                            }
+                        yield f"data: {json.dumps(stats)}\n\n"
                     except Exception as e2:
                         yield f"data: {json.dumps({'error': f'All synthesis attempts failed. Last error: {str(e2)}'})}\n\n"

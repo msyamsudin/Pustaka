@@ -5,6 +5,35 @@ from typing import Dict, List, Optional, Tuple
 from threading import Lock
 
 
+# List of domains to exclude from search results to ensure relevance
+EXCLUDED_DOMAINS = [
+    "gramedia.com",
+    "play.google.com",
+    "tokopedia.com",
+    "shopee.co.id",
+    "bukalapak.com",
+    "blibli.com",
+    "lazada.co.id",
+    "deepublishstore.com",
+    "goodreads.com",
+    "wordpress.com",
+    "blogspot.com",
+    "medium.com",
+    "scribd.com",
+    "academia.edu"  # Sometimes good, but often noisy; can be removed if specific papers are needed
+]
+
+# Keywords to append to queries to find informative content
+RELEVANCE_KEYWORDS = [
+    "review",
+    "analisis",
+    "bedah buku",
+    "sinopsis",
+    "summary",
+    "inti sari"
+]
+
+
 class BraveSearchClient:
     """Client for Brave Search API integration"""
     
@@ -194,14 +223,15 @@ class SearchAggregator:
         self.wiki_client = WikipediaSearchClient(timeout) if enable_wikipedia else None
         self.max_results = max_results
     
-    def search(self, title: str, author: str, genre: str = "") -> Dict:
+    def search(self, title: str, author: str, genre: str = "", relevance_evaluator: Optional[callable] = None) -> Dict:
         """
-        Aggregate search results from all enabled sources
+        Aggregate search results from all enabled sources with iterative refinement
         
         Args:
             title: Book title
             author: Book author
             genre: Book genre (optional, for better context)
+            relevance_evaluator: Async callback function(results, book_info) -> List[bool]
             
         Returns:
             Aggregated search results with metadata
@@ -215,35 +245,21 @@ class SearchAggregator:
                 "total_sources": 0,
                 "search_duration_ms": 0,
                 "queries_used": 0,
+                "iterations": 0,
                 "errors": []
             }
         }
         
-        # Construct search query
-        base_query = f'"{title}" {author}'
-        if genre:
-            base_query += f" {genre}"
+        book_info = {"title": title, "author": author, "genre": genre}
+        informative_results = []
+        max_iterations = 2
+        min_informative_needed = 3
         
-        # Search Brave
-        if self.brave_client and self.brave_client.api_key:
-            brave_result = self.brave_client.search(base_query, self.max_results)
-            results["search_metadata"]["queries_used"] += 1
-            
-            if "error" in brave_result:
-                results["search_metadata"]["errors"].append(f"Brave: {brave_result['error']}")
-                print(f"[SEARCH_WARNING] Brave Search failed: {brave_result['error']}")
-            else:
-                results["brave_results"] = brave_result.get("results", [])
-                results["search_metadata"]["total_sources"] += len(results["brave_results"])
-        
-        # Search Wikipedia
+        # 1. Wikipedia Search (Single attempt)
         if self.wiki_client:
-            # Try searching with book title first
             wiki_result = self.wiki_client.search(title, lang="id")
             results["search_metadata"]["queries_used"] += 1
-            
             if "error" in wiki_result:
-                # Fallback: try searching with author name
                 wiki_result = self.wiki_client.search(author, lang="id")
                 results["search_metadata"]["queries_used"] += 1
             
@@ -251,11 +267,77 @@ class SearchAggregator:
                 results["wikipedia_summary"] = wiki_result.get("summary", "")
                 results["wikipedia_url"] = wiki_result.get("url", "")
                 results["search_metadata"]["total_sources"] += 1
-            else:
-                if "error" in wiki_result:
-                    results["search_metadata"]["errors"].append(f"Wikipedia: {wiki_result['error']}")
-                    print(f"[SEARCH_WARNING] Wikipedia search failed: {wiki_result['error']}")
+
+        # 2. Iterative Brave Search
+        current_iteration = 0
+        seen_urls = set()
         
+        # Define search phases with academic and global focus
+        search_phases = [
+            # Phase 1: High-level scholarly/academic search (Bilingual)
+            {
+                "relevance_term": '(historiography OR "critical review" OR "scholarly analysis" OR "analisis akademik" OR "edisi kritis")',
+                "desc": "Scholarly/Historiographical search"
+            },
+            # Phase 2: Targeted deep-dive into research/journals
+            {
+                "relevance_term": '("journal article" OR "research paper" OR "academic publisher" OR "peer-reviewed")',
+                "desc": "Academic peer-review search"
+            }
+        ]
+
+        while current_iteration < max_iterations and len(informative_results) < min_informative_needed:
+            phase = search_phases[current_iteration]
+            results["search_metadata"]["iterations"] += 1
+            
+            # Construct Query
+            base_query = f'"{title}" {author}'
+            exclusion_query = " ".join([f"-site:{domain}" for domain in EXCLUDED_DOMAINS])
+            brave_query = f"{base_query} {phase['relevance_term']} {exclusion_query}"
+            
+            # Perform Search
+            if self.brave_client and self.brave_client.api_key:
+                brave_res = self.brave_client.search(brave_query, self.max_results)
+                results["search_metadata"]["queries_used"] += 1
+                
+                if "error" in brave_res:
+                    results["search_metadata"]["errors"].append(f"Brave (Iter {current_iteration+1}): {brave_res['error']}")
+                else:
+                    new_results = []
+                    for r in brave_res.get("results", []):
+                        if r['url'] not in seen_urls:
+                            # Pre-filter by domain as well (manual check just in case API missed it)
+                            is_excluded = any(domain in r['url'].lower() for domain in EXCLUDED_DOMAINS)
+                            if not is_excluded:
+                                new_results.append(r)
+                                seen_urls.add(r['url'])
+                    
+                    if new_results:
+                        if relevance_evaluator:
+                            # Evaluate relevance using AI callback
+                            # Note: This is usually async, but aggregator is synchronous for now. 
+                            # We might need to run it in a thread or make aggregator async.
+                            # For simplicity of integration, let's assume it's callable.
+                            try:
+                                # In a real implementation, we might use anyio.to_thread if needed
+                                relevance_mask = relevance_evaluator(new_results, book_info)
+                                for idx, is_relevant in enumerate(relevance_mask):
+                                    if is_relevant:
+                                        informative_results.append(new_results[idx])
+                            except Exception as e:
+                                results["search_metadata"]["errors"].append(f"AI Eval failed: {e}")
+                                # Fallback: take all non-excluded results if AI fails
+                                informative_results.extend(new_results)
+                        else:
+                            informative_results.extend(new_results)
+            
+            current_iteration += 1
+            if len(informative_results) >= min_informative_needed:
+                break
+                
+        results["brave_results"] = informative_results[:self.max_results]
+        results["search_metadata"]["total_sources"] += len(results["brave_results"])
+
         # Calculate duration
         duration_ms = int((time.time() - start_time) * 1000)
         results["search_metadata"]["search_duration_ms"] = duration_ms

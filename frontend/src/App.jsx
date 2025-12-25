@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus, MessageSquarePlus, Share2 } from 'lucide-react';
+import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus, MessageSquarePlus, Share2, Globe, ExternalLink } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
 
@@ -2989,7 +2989,7 @@ function App() {
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  code({ node, className, children, ...props }) {
+                  code({ node, inline, className, children, ...props }) {
                     const content = String(children);
                     if (content.startsWith('intel-synth:')) {
                       return (
@@ -3011,13 +3011,73 @@ function App() {
                         />
                       );
                     }
-                    if (content.startsWith('ref-tag:')) {
+                    if (inline && content.startsWith('ref-tag:')) {
                       const source = content.replace('ref-tag:', '');
                       return (
                         <span className="ref-tag" title={`Rujukan Eksternal: ${source}`}>
                           <Search size={8} style={{ marginRight: '2px' }} />
                           {source.length > 15 ? source.substring(0, 12) + '...' : source}
                         </span>
+                      );
+                    }
+                    if (!inline && className === 'language-ref-section') {
+                      const inner = content;
+                      const items = [];
+                      const regex = /(\d+)\.\s+\*\*(.*?)\*\*:\s+\[(.*?)\]\((.*?)\)/g;
+                      let match;
+                      while ((match = regex.exec(inner)) !== null) {
+                        items.push({ id: match[1], label: match[2], title: match[3], url: match[4] });
+                      }
+
+                      if (items.length === 0) return null;
+
+                      return (
+                        <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
+                          <div className="premium-ref-header">
+                            <div className="premium-ref-icon-wrapper">
+                              <BookOpen size={18} />
+                            </div>
+                            <div className="premium-ref-title-group">
+                              <span className="premium-ref-title">Rujukan & Verifikasi Eksternal</span>
+                              <span className="premium-ref-subtitle">Terpadu dari sumber akademik & ensiklopedia digital</span>
+                            </div>
+                            <div className="premium-ref-verified-badge">
+                              <CheckCircle size={12} />
+                              <span>Verified</span>
+                            </div>
+                          </div>
+
+                          <div className="premium-ref-grid">
+                            {items.map((item, idx) => {
+                              const isWiki = item.label.toLowerCase().includes('wikipedia');
+                              return (
+                                <a
+                                  key={idx}
+                                  href={item.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="ref-card-premium stagger-item"
+                                  style={{ '--stagger-idx': idx }}
+                                >
+                                  <div className="ref-card-glow" />
+                                  <div className="ref-card-content">
+                                    <div className="ref-card-top">
+                                      <span className={`ref-type-badge ${isWiki ? 'type-wiki' : 'type-search'}`}>
+                                        {isWiki ? <Globe size={10} /> : <Search size={10} />}
+                                        {item.label}
+                                      </span>
+                                      <ExternalLink size={12} className="ref-card-external" />
+                                    </div>
+                                    <div className="ref-card-main-title">{item.title}</div>
+                                    <div className="ref-card-footer-url">
+                                      {new URL(item.url ? item.url : 'http://localhost').hostname}
+                                    </div>
+                                  </div>
+                                </a>
+                              );
+                            })}
+                          </div>
+                        </div>
                       );
                     }
                     return <code className={className} {...props}>{children}</code>;
@@ -3028,41 +3088,10 @@ function App() {
                   .replace(/\[\[(.*?)\]\]/g, '`intel-synth:$1`')
                   .replace(/\[Analisis Terintegrasi\]/g, '`claim-tag:Analisis Terintegrasi`')
                   .replace(/\[Rujukan Eksternal: (.*?)\]/g, '`ref-tag:$1`')
+                  .replace(/\[REF_SECTION\]([\s\S]*?)\[\/REF_SECTION\]/g, '\n\n```ref-section\n$1\n```\n\n')
                   : ""}
               </ReactMarkdown>
 
-              {/* Minimalist Footnotes Section */}
-              {summary && !summarizing && (searchSources?.wikipedia || (searchSources?.brave && searchSources.brave.length > 0)) && (
-                <div className="footnotes-container animate-fade-in">
-                  <div className="footnotes-title">
-                    <BookOpen size={14} /> Rujukan & Verifikasi Eksternal
-                  </div>
-
-                  {searchSources.wikipedia && (
-                    <div className="footnote-item">
-                      <div className="footnote-marker">1</div>
-                      <div className="footnote-content">
-                        <a href={searchSources.wikipedia.url} target="_blank" rel="noopener noreferrer" className="footnote-source-title">
-                          Wikipedia: {searchSources.wikipedia.title}
-                        </a>
-                        <div className="footnote-url">{searchSources.wikipedia.url}</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {searchSources.brave && searchSources.brave.map((source, idx) => (
-                    <div key={idx} className="footnote-item">
-                      <div className="footnote-marker">{searchSources.wikipedia ? idx + 2 : idx + 1}</div>
-                      <div className="footnote-content">
-                        <a href={source.url} target="_blank" rel="noopener noreferrer" className="footnote-source-title">
-                          {source.title}
-                        </a>
-                        <div className="footnote-url">{source.url}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
               {summarizing && summary && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>
                   <div className="spinner" style={{ width: '16px', height: '16px' }}></div>
@@ -3141,110 +3170,6 @@ function App() {
                     </span>
                   )}
                 </div>
-              </div>
-            )}
-
-            {/* Search Enrichment Sources */}
-            {searchSources && (
-              <div style={{
-                marginTop: '1rem',
-                borderTop: '1px solid var(--border-color)',
-                paddingTop: '0.75rem'
-              }}>
-                <button
-                  onClick={() => setShowSearchSources(!showSearchSources)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--accent-color)',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                    padding: '0.2rem 0',
-                    fontWeight: '600'
-                  }}
-                >
-                  {showSearchSources ? <EyeOff size={14} /> : <Eye size={14} />}
-                  {showSearchSources ? "Sembunyikan Sumber Eksternal" : "Tampilkan Sumber Eksternal"}
-                </button>
-
-                {showSearchSources && (
-                  <div className="animate-fade-in" style={{
-                    marginTop: '0.75rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.5rem',
-                    background: 'rgba(255,255,255,0.02)',
-                    padding: '1rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color)'
-                  }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
-                      Situs Rujukan yang Digunakan:
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '0.75rem' }}>
-                      {searchSources.wikipedia && (
-                        <a
-                          href={searchSources.wikipedia.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '2px',
-                            padding: '0.6rem',
-                            background: 'rgba(255,255,255,0.03)',
-                            borderRadius: '6px',
-                            border: '1px solid rgba(255,255,255,0.05)',
-                            textDecoration: 'none',
-                            transition: 'all 0.2s'
-                          }}
-                          className="hover-card"
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: '500' }}>
-                            <BookOpen size={12} color="#3b82f6" />
-                            Wikipedia: {searchSources.wikipedia.title}
-                          </div>
-                          <div style={{ fontSize: '0.7rem', color: '#3b82f6', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {searchSources.wikipedia.url}
-                          </div>
-                        </a>
-                      )}
-
-                      {searchSources.brave && searchSources.brave.map((source, idx) => (
-                        <a
-                          key={idx}
-                          href={source.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '2px',
-                            padding: '0.6rem',
-                            background: 'rgba(255,255,255,0.03)',
-                            borderRadius: '6px',
-                            border: '1px solid rgba(255,255,255,0.05)',
-                            textDecoration: 'none',
-                            transition: 'all 0.2s'
-                          }}
-                          className="hover-card"
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: '500' }}>
-                            <Search size={12} color="var(--accent-color)" />
-                            {source.title}
-                          </div>
-                          <div style={{ fontSize: '0.7rem', color: 'var(--accent-color)', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {source.url}
-                          </div>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
