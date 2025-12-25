@@ -59,7 +59,8 @@ class BookSummarizer:
         provider: str = "OpenRouter", 
         base_url: Optional[str] = None, 
         timeout: int = 300, 
-        max_retries: int = 3
+        max_retries: int = 3,
+        search_config: Optional[Dict] = None
     ):
         self.api_key = api_key
         self.model_name = model_name or "google/gemini-2.0-flash-exp:free"
@@ -69,6 +70,17 @@ class BookSummarizer:
         self.max_retries = max_retries
         self.currency_manager = CurrencyManager()
         self._client_lock = Lock()
+        
+        # Initialize search aggregator if enabled
+        self.search_aggregator = None
+        if search_config:
+            try:
+                from search_service import create_search_aggregator
+                self.search_aggregator = create_search_aggregator(search_config)
+                if self.search_aggregator:
+                    print("[SEARCH] Search enrichment enabled")
+            except Exception as e:
+                print(f"[SEARCH_WARNING] Failed to initialize search: {e}")
         
         # Pre-compile Regex
         self._regex_patterns = {
@@ -159,7 +171,8 @@ class BookSummarizer:
         return self._build_summarize_prompt(title, author, genre, year, context_description, source_note, partial_content)
 
     def _build_summarize_prompt(self, title: str, author: str, genre: str, year: str, 
-                                context: str, source: str, partial: Optional[str]) -> str:
+                                context: str, source: str, partial: Optional[str], 
+                                search_context: Optional[str] = None) -> str:
         """Prompt yang meminta AI menggabungkan konten menjadi 3 Section Padat"""
         
         intro = f"""<document_metadata>
@@ -175,7 +188,7 @@ Description   : {context[:500] if context else "[Not available]"}
 You are a MULTI-SOURCE INTELLIGENCE ANALYST focused on density and precision.
 Your goal is to transform content into 3 CONSOLIDATED PRIMARY SECTIONS.
 </role_definition>
-
+{search_context if search_context else ""}
 <data_precision_policy>
 1. Wrap synthesized/estimated quantitative data with `[[ ]]`.
 2. Use illustrative ranges for large numbers.
@@ -678,7 +691,29 @@ Explicitly label every important claim/statement with ONE of these tags:
         """Streaming summarize"""
         try:
             m = self._extract_metadata(book_metadata)
-            p = self._get_full_prompt(m["title"], m["author"], m["genre"], m["year"], m["description"], "info", partial_content)
+            
+            # Perform search if enabled
+            search_context_str = ""
+            search_metadata = {}
+            if self.search_aggregator:
+                yield f"data: {json.dumps({'status': 'Searching external sources...', 'progress': 3})}\n\n"
+                try:
+                    search_results = await anyio.to_thread.run_sync(
+                        self.search_aggregator.search, 
+                        m["title"], m["author"], m.get("genre", "")
+                    )
+                    search_context_str = self.search_aggregator.format_for_prompt(search_results)
+                    search_metadata = search_results.get("search_metadata", {})
+                    if search_metadata.get("total_sources", 0) > 0:
+                        print(f"[SEARCH] Found {search_metadata['total_sources']} external sources in {search_metadata.get('search_duration_ms', 0)}ms")
+                except Exception as e:
+                    print(f"[SEARCH_WARNING] Search failed, continuing without enrichment: {e}")
+            
+            # Build prompt with search context
+            p = self._build_summarize_prompt(
+                m["title"], m["author"], m["genre"], m["year"], 
+                m["description"], "info", partial_content, search_context_str
+            )
             if not p: yield f"data: {json.dumps({'error': 'Prompt failed'})}\n\n"; return
             
             start = time.time()
@@ -722,6 +757,9 @@ Explicitly label every important claim/statement with ONE of these tags:
                 if usage:
                     stats['usage'] = usage
                     stats['cost_estimate'] = self._calculate_cost(usage['prompt_tokens'], usage['completion_tokens'])
+                if search_metadata:
+                    stats['search_enriched'] = search_metadata.get('total_sources', 0) > 0
+                    stats['search_metadata'] = search_metadata
                 yield f"data: {json.dumps(stats)}\n\n"
         except Exception as e: yield f"data: {json.dumps({'error': str(e)})}\n\n"
 

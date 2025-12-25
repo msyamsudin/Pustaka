@@ -19,7 +19,11 @@ class ConfigManager:
                 "groq_key": "",
                 "groq_model": "llama-3.3-70b-versatile",
                 "notion_api_key": "",
-                "notion_database_id": ""
+                "notion_database_id": "",
+                "brave_api_key": "",
+                "enable_search_enrichment": False,
+                "search_max_results": 5,
+                "search_timeout": 10
             })
 
     def load_config(self) -> Dict:

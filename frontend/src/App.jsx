@@ -416,6 +416,14 @@ function App() {
   const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile');
   const [notionApiKey, setNotionApiKey] = useState('');
   const [notionDatabaseId, setNotionDatabaseId] = useState('');
+
+  // Search Enrichment State
+  const [braveApiKey, setBraveApiKey] = useState('');
+  const [enableSearchEnrichment, setEnableSearchEnrichment] = useState(false);
+  const [searchMaxResults, setSearchMaxResults] = useState(5);
+  const [showBraveKey, setShowBraveKey] = useState(false);
+  const [braveKeyValid, setBraveKeyValid] = useState(null);
+  const [validatingBraveKey, setValidatingBraveKey] = useState(false);
   const [isNotionSharing, setIsNotionSharing] = useState(false);
   const [availableModels, setAvailableModels] = useState([]);
   const [keyValid, setKeyValid] = useState(null); // null, true, false
@@ -831,6 +839,11 @@ function App() {
 
           if (configRes.data.notion_api_key) setNotionApiKey(configRes.data.notion_api_key);
           if (configRes.data.notion_database_id) setNotionDatabaseId(configRes.data.notion_database_id);
+
+          // Load Search Enrichment Config
+          if (configRes.data.brave_api_key) setBraveApiKey(configRes.data.brave_api_key);
+          if (configRes.data.enable_search_enrichment !== undefined) setEnableSearchEnrichment(configRes.data.enable_search_enrichment);
+          if (configRes.data.search_max_results) setSearchMaxResults(configRes.data.search_max_results);
 
           // Initial model fetch based on active provider
           const activeProvider = configRes.data.provider || 'OpenRouter';
@@ -2019,6 +2032,141 @@ function App() {
                   </div>
                 </div>
               </div>
+
+              <div style={{ marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Search size={18} color="var(--accent-color)" />
+                  Search Enrichment (Experimental)
+                </h4>
+
+                <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                    Memperkaya rangkuman dengan informasi dari <strong>Wikipedia</strong> (gratis) dan <strong>Brave Search</strong> (memerlukan API key).
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '500', marginBottom: '0.25rem' }}>
+                      Enable Search Enrichment
+                    </label>
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      Aktifkan pencarian otomatis saat generate rangkuman
+                    </p>
+                  </div>
+                  <label style={{ position: 'relative', display: 'inline-block', width: '48px', height: '24px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={enableSearchEnrichment}
+                      onChange={(e) => {
+                        setEnableSearchEnrichment(e.target.checked);
+                        saveConfig({ enable_search_enrichment: e.target.checked });
+                      }}
+                      style={{ opacity: 0, width: 0, height: 0 }}
+                    />
+                    <span style={{
+                      position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                      backgroundColor: enableSearchEnrichment ? 'var(--accent-color)' : 'var(--border-color)',
+                      transition: '0.3s', borderRadius: '24px'
+                    }}>
+                      <span style={{
+                        position: 'absolute', content: '', height: '18px', width: '18px', left: enableSearchEnrichment ? '26px' : '3px',
+                        bottom: '3px', backgroundColor: 'white', transition: '0.3s', borderRadius: '50%'
+                      }}></span>
+                    </span>
+                  </label>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Brave Search API Key (Optional)
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <input
+                        type={showBraveKey ? "text" : "password"}
+                        value={braveApiKey}
+                        onChange={(e) => {
+                          setBraveApiKey(e.target.value);
+                          saveConfig({ brave_api_key: e.target.value });
+                        }}
+                        className="input-field"
+                        placeholder="BSA..."
+                        style={{
+                          paddingRight: '3rem',
+                          marginBottom: 0,
+                          borderColor: braveKeyValid === true ? 'var(--success)' : (braveKeyValid === false ? 'var(--error)' : 'var(--border-color)')
+                        }}
+                      />
+                      <div style={{
+                        position: 'absolute', right: '0.5rem', top: '0', height: '100%',
+                        display: 'flex', alignItems: 'center', pointerEvents: 'none'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowBraveKey(!showBraveKey)}
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--text-secondary)',
+                            cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
+                          }}
+                        >
+                          {showBraveKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!braveApiKey) return;
+                        setValidatingBraveKey(true);
+                        try {
+                          const res = await axios.post(`${API_BASE_URL}/search/test`, { brave_api_key: braveApiKey });
+                          if (res.data.valid) {
+                            setBraveKeyValid(true);
+                            showToast('Brave API key valid!', 'success');
+                          }
+                        } catch (err) {
+                          setBraveKeyValid(false);
+                          showAlert('Invalid Key', err.response?.data?.detail || 'Brave API key tidak valid');
+                        } finally {
+                          setValidatingBraveKey(false);
+                        }
+                      }}
+                      disabled={validatingBraveKey || !braveApiKey}
+                      className="btn-secondary"
+                      style={{ height: '42px', minWidth: '42px' }}
+                      title="Test Brave API Key"
+                    >
+                      {validatingBraveKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
+                    </button>
+                  </div>
+                  <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                    Dapatkan API key gratis (2,000 queries/bulan) di <a href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-color)' }}>brave.com/search/api</a>
+                  </p>
+                </div>
+
+                <div style={{ marginTop: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Max Search Results
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={searchMaxResults}
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(10, parseInt(e.target.value) || 5));
+                      setSearchMaxResults(val);
+                      saveConfig({ search_max_results: val });
+                    }}
+                    className="input-field"
+                    style={{ marginBottom: 0, width: '100px' }}
+                  />
+                  <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Jumlah hasil pencarian (1-10)
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div style={{
@@ -2423,6 +2571,35 @@ function App() {
                           Analytical Refining Mode
                         </span>
                         <Sparkles size={14} color={highQuality ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={highQuality ? 1 : 0.5} />
+                      </div>
+
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        background: 'rgba(255,255,255,0.03)',
+                        padding: '0.5rem 1rem',
+                        borderRadius: '20px',
+                        border: '1px solid var(--border-color)',
+                        cursor: 'pointer'
+                      }} onClick={() => {
+                        const newValue = !enableSearchEnrichment;
+                        setEnableSearchEnrichment(newValue);
+                        saveConfig({ enable_search_enrichment: newValue });
+                      }}>
+                        <div className={`toggle-switch ${enableSearchEnrichment ? 'active' : ''}`} style={{
+                          width: '36px', height: '18px', background: enableSearchEnrichment ? 'var(--accent-color)' : '#333',
+                          borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
+                        }}>
+                          <div style={{
+                            width: '14px', height: '14px', background: 'white', borderRadius: '50%',
+                            position: 'absolute', top: '2px', left: enableSearchEnrichment ? '20px' : '2px', transition: 'all 0.3s'
+                          }}></div>
+                        </div>
+                        <span style={{ fontSize: '0.85rem', fontWeight: '500', color: enableSearchEnrichment ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
+                          Search Enrichment
+                        </span>
+                        <Search size={14} color={enableSearchEnrichment ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={enableSearchEnrichment ? 1 : 0.5} />
                       </div>
 
                       {highQuality && !summary && (

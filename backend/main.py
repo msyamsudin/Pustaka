@@ -53,6 +53,10 @@ class ConfigRequest(BaseModel):
     provider: Optional[str] = None
     notion_api_key: Optional[str] = None
     notion_database_id: Optional[str] = None
+    brave_api_key: Optional[str] = None
+    enable_search_enrichment: Optional[bool] = None
+    search_max_results: Optional[int] = None
+
 
 class CoverUpdateRequest(BaseModel):
     image_url: str
@@ -103,6 +107,12 @@ def update_config(req: ConfigRequest):
         current_config["notion_api_key"] = req.notion_api_key
     if req.notion_database_id is not None:
         current_config["notion_database_id"] = req.notion_database_id
+    if req.brave_api_key is not None:
+        current_config["brave_api_key"] = req.brave_api_key
+    if req.enable_search_enrichment is not None:
+        current_config["enable_search_enrichment"] = req.enable_search_enrichment
+    if req.search_max_results is not None:
+        current_config["search_max_results"] = max(1, min(req.search_max_results, 10))  # Clamp 1-10
         
     config_manager.save_config(current_config)
     return {"status": "success", "config": current_config}
@@ -163,7 +173,8 @@ async def summarize_book(req: SummarizationRequest):
         api_key=api_key, 
         model_name=model, 
         provider=provider, 
-        base_url=base_url
+        base_url=base_url,
+        search_config=config  # Pass full config for search
     )
     
     if req.enhance_quality:
@@ -236,7 +247,7 @@ async def synthesize_summaries(req: SynthesisRequest):
     model = req.model or (config.get("openrouter_model") if provider == "OpenRouter" else config.get("groq_model"))
     base_url = config.get("ollama_base_url")
 
-    summarizer = BookSummarizer(api_key=api_key, model_name=model, provider=provider, base_url=base_url)
+    summarizer = BookSummarizer(api_key=api_key, model_name=model, provider=provider, base_url=base_url, search_config=config)
     
     # Calculate diversity analysis before synthesis
     diversity_analysis = summarizer._calculate_draft_diversity(drafts)
@@ -345,6 +356,38 @@ def list_models(req: Dict):
             raise HTTPException(status_code=500, detail=f"Failed to connect to Ollama: {str(e)}")
     
     return {"valid": False, "models": []}
+
+
+@app.post("/api/search/test")
+def test_search_api(req: Dict):
+    """Test Brave API key and search functionality"""
+    brave_api_key = req.get("brave_api_key")
+    
+    if not brave_api_key:
+        raise HTTPException(status_code=400, detail="Brave API key is required for testing")
+    
+    try:
+        from search_service import BraveSearchClient
+        client = BraveSearchClient(api_key=brave_api_key, timeout=5)
+        
+        # Test with a simple query
+        result = client.search("Python programming", count=2)
+        
+        if "error" in result:
+            if "Invalid" in result["error"] or "401" in result["error"]:
+                raise HTTPException(status_code=401, detail=f"Invalid Brave API key: {result['error']}")
+            else:
+                raise HTTPException(status_code=500, detail=f"Search test failed: {result['error']}")
+        
+        return {
+            "valid": True,
+            "message": "Brave API key is valid",
+            "sample_results": result.get("total", 0)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Test failed: {str(e)}")
 
 
 # --- Saved Summaries Endpoints ---
