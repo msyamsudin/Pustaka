@@ -198,6 +198,7 @@ Your goal is to transform content into 3 CONSOLIDATED PRIMARY SECTIONS.
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
 - [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
+- [Rujukan Eksternal: Nama Sumber] : Information or context derived from external search/Wikipedia. Replace "Nama Sumber" with the actual reference name (e.g., Wikipedia, site name).
 </claim_tagging_policy>
 
 <output_structure>
@@ -516,6 +517,7 @@ Explicitly label every important claim/statement with ONE of these tags:
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
 - [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
+- [Rujukan Eksternal: Nama Sumber] : Information or context derived from external search/Wikipedia.
 </claim_tagging_policy>
 
 <instructions>
@@ -760,6 +762,13 @@ Explicitly label every important claim/statement with ONE of these tags:
                 if search_metadata:
                     stats['search_enriched'] = search_metadata.get('total_sources', 0) > 0
                     stats['search_metadata'] = search_metadata
+                    stats['search_sources'] = {
+                        'brave': [{'title': r['title'], 'url': r['url']} for r in search_results.get('brave_results', [])],
+                        'wikipedia': {
+                            'title': search_results.get('wikipedia_summary', '')[:100] + '...',
+                            'url': search_results.get('wikipedia_url', '')
+                        } if search_results.get('wikipedia_summary') else None
+                    }
                 yield f"data: {json.dumps(stats)}\n\n"
         except Exception as e: yield f"data: {json.dumps({'error': str(e)})}\n\n"
 

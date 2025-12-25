@@ -424,6 +424,8 @@ function App() {
   const [showBraveKey, setShowBraveKey] = useState(false);
   const [braveKeyValid, setBraveKeyValid] = useState(null);
   const [validatingBraveKey, setValidatingBraveKey] = useState(false);
+  const [searchSources, setSearchSources] = useState(null); // {brave: [], wikipedia: {}}
+  const [showSearchSources, setShowSearchSources] = useState(false);
   const [isNotionSharing, setIsNotionSharing] = useState(false);
   const [availableModels, setAvailableModels] = useState([]);
   const [keyValid, setKeyValid] = useState(null); // null, true, false
@@ -1214,6 +1216,8 @@ function App() {
       setCurrentVariant(null);
       setTokensReceived(0);
       setProgress(0);
+      setSearchSources(null);
+      setShowSearchSources(false);
     }
     setStreamingStatus(isResume ? "Re-establishing knowledge gateway..." : "Initializing synthesis engine...");
 
@@ -1301,6 +1305,9 @@ function App() {
                 });
                 if (data.is_enhanced) {
                   showToast("Kualitas ditingkatkan via Refining Mode", "success");
+                }
+                if (data.search_sources) {
+                  setSearchSources(data.search_sources);
                 }
               }
             } catch (e) {
@@ -2534,72 +2541,64 @@ function App() {
             )}
 
             {verificationResult.is_valid && (
-              <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1.5rem' }}>
-                {verificationResult.sources.find(s => s.image_url) && (
-                  <div style={{ flexShrink: 0 }}>
-                    <img
-                      src={verificationResult.sources.find(s => s.image_url).image_url}
-                      alt="Cover"
-                      className="sharp-image"
-                      style={{ width: '100px', borderRadius: '4px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
-                    />
-                  </div>
-                )}
-                <div style={{ flex: 1, textAlign: 'center', alignSelf: 'center' }}>
+              <div style={{ marginTop: '1.5rem' }}>
+                <div style={{ textAlign: 'center', alignSelf: 'center' }}>
                   {!summary && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.75rem',
-                        background: 'rgba(255,255,255,0.03)',
-                        padding: '0.5rem 1rem',
-                        borderRadius: '20px',
-                        border: '1px solid var(--border-color)',
-                        cursor: 'pointer'
-                      }} onClick={() => setHighQuality(!highQuality)}>
-                        <div className={`toggle-switch ${highQuality ? 'active' : ''}`} style={{
-                          width: '36px', height: '18px', background: highQuality ? 'var(--accent-color)' : '#333',
-                          borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
-                        }}>
-                          <div style={{
-                            width: '14px', height: '14px', background: 'white', borderRadius: '50%',
-                            position: 'absolute', top: '2px', left: highQuality ? '20px' : '2px', transition: 'all 0.3s'
-                          }}></div>
+                      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '0.5rem' }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          background: 'rgba(255,255,255,0.03)',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '20px',
+                          border: '1px solid var(--border-color)',
+                          cursor: 'pointer'
+                        }} onClick={() => setHighQuality(!highQuality)}>
+                          <div className={`toggle-switch ${highQuality ? 'active' : ''}`} style={{
+                            width: '36px', height: '18px', background: highQuality ? 'var(--accent-color)' : '#333',
+                            borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
+                          }}>
+                            <div style={{
+                              width: '14px', height: '14px', background: 'white', borderRadius: '50%',
+                              position: 'absolute', top: '2px', left: highQuality ? '20px' : '2px', transition: 'all 0.3s'
+                            }}></div>
+                          </div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: '500', color: highQuality ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
+                            Analytical Refining Mode
+                          </span>
+                          <Sparkles size={14} color={highQuality ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={highQuality ? 1 : 0.5} />
                         </div>
-                        <span style={{ fontSize: '0.85rem', fontWeight: '500', color: highQuality ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                          Analytical Refining Mode
-                        </span>
-                        <Sparkles size={14} color={highQuality ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={highQuality ? 1 : 0.5} />
-                      </div>
 
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.75rem',
-                        background: 'rgba(255,255,255,0.03)',
-                        padding: '0.5rem 1rem',
-                        borderRadius: '20px',
-                        border: '1px solid var(--border-color)',
-                        cursor: 'pointer'
-                      }} onClick={() => {
-                        const newValue = !enableSearchEnrichment;
-                        setEnableSearchEnrichment(newValue);
-                        saveConfig({ enable_search_enrichment: newValue });
-                      }}>
-                        <div className={`toggle-switch ${enableSearchEnrichment ? 'active' : ''}`} style={{
-                          width: '36px', height: '18px', background: enableSearchEnrichment ? 'var(--accent-color)' : '#333',
-                          borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          background: 'rgba(255,255,255,0.03)',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '20px',
+                          border: '1px solid var(--border-color)',
+                          cursor: 'pointer'
+                        }} onClick={() => {
+                          const newValue = !enableSearchEnrichment;
+                          setEnableSearchEnrichment(newValue);
+                          saveConfig({ enable_search_enrichment: newValue });
                         }}>
-                          <div style={{
-                            width: '14px', height: '14px', background: 'white', borderRadius: '50%',
-                            position: 'absolute', top: '2px', left: enableSearchEnrichment ? '20px' : '2px', transition: 'all 0.3s'
-                          }}></div>
+                          <div className={`toggle-switch ${enableSearchEnrichment ? 'active' : ''}`} style={{
+                            width: '36px', height: '18px', background: enableSearchEnrichment ? 'var(--accent-color)' : '#333',
+                            borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
+                          }}>
+                            <div style={{
+                              width: '14px', height: '14px', background: 'white', borderRadius: '50%',
+                              position: 'absolute', top: '2px', left: enableSearchEnrichment ? '20px' : '2px', transition: 'all 0.3s'
+                            }}></div>
+                          </div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: '500', color: enableSearchEnrichment ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
+                            Search Enrichment
+                          </span>
+                          <Search size={14} color={enableSearchEnrichment ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={enableSearchEnrichment ? 1 : 0.5} />
                         </div>
-                        <span style={{ fontSize: '0.85rem', fontWeight: '500', color: enableSearchEnrichment ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                          Search Enrichment
-                        </span>
-                        <Search size={14} color={enableSearchEnrichment ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={enableSearchEnrichment ? 1 : 0.5} />
                       </div>
 
                       {highQuality && !summary && (
@@ -3012,6 +3011,15 @@ function App() {
                         />
                       );
                     }
+                    if (content.startsWith('ref-tag:')) {
+                      const source = content.replace('ref-tag:', '');
+                      return (
+                        <span className="ref-tag" title={`Rujukan Eksternal: ${source}`}>
+                          <Search size={8} style={{ marginRight: '2px' }} />
+                          {source.length > 15 ? source.substring(0, 12) + '...' : source}
+                        </span>
+                      );
+                    }
                     return <code className={className} {...props}>{children}</code>;
                   }
                 }}
@@ -3019,8 +3027,42 @@ function App() {
                 {summary ? summary
                   .replace(/\[\[(.*?)\]\]/g, '`intel-synth:$1`')
                   .replace(/\[Analisis Terintegrasi\]/g, '`claim-tag:Analisis Terintegrasi`')
+                  .replace(/\[Rujukan Eksternal: (.*?)\]/g, '`ref-tag:$1`')
                   : ""}
               </ReactMarkdown>
+
+              {/* Minimalist Footnotes Section */}
+              {summary && !summarizing && (searchSources?.wikipedia || (searchSources?.brave && searchSources.brave.length > 0)) && (
+                <div className="footnotes-container animate-fade-in">
+                  <div className="footnotes-title">
+                    <BookOpen size={14} /> Rujukan & Verifikasi Eksternal
+                  </div>
+
+                  {searchSources.wikipedia && (
+                    <div className="footnote-item">
+                      <div className="footnote-marker">1</div>
+                      <div className="footnote-content">
+                        <a href={searchSources.wikipedia.url} target="_blank" rel="noopener noreferrer" className="footnote-source-title">
+                          Wikipedia: {searchSources.wikipedia.title}
+                        </a>
+                        <div className="footnote-url">{searchSources.wikipedia.url}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {searchSources.brave && searchSources.brave.map((source, idx) => (
+                    <div key={idx} className="footnote-item">
+                      <div className="footnote-marker">{searchSources.wikipedia ? idx + 2 : idx + 1}</div>
+                      <div className="footnote-content">
+                        <a href={source.url} target="_blank" rel="noopener noreferrer" className="footnote-source-title">
+                          {source.title}
+                        </a>
+                        <div className="footnote-url">{source.url}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {summarizing && summary && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>
                   <div className="spinner" style={{ width: '16px', height: '16px' }}></div>
@@ -3093,7 +3135,116 @@ function App() {
                       Hasil Sintesis ({usageStats.source_count} Varian: {usageStats.source_models?.map(m => m.split('/').pop()).join(', ')})
                     </span>
                   )}
+                  {usageStats?.search_enriched && (
+                    <span className="badge" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                      <Search size={12} style={{ marginRight: '4px' }} /> Search Enriched
+                    </span>
+                  )}
                 </div>
+              </div>
+            )}
+
+            {/* Search Enrichment Sources */}
+            {searchSources && (
+              <div style={{
+                marginTop: '1rem',
+                borderTop: '1px solid var(--border-color)',
+                paddingTop: '0.75rem'
+              }}>
+                <button
+                  onClick={() => setShowSearchSources(!showSearchSources)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--accent-color)',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    padding: '0.2rem 0',
+                    fontWeight: '600'
+                  }}
+                >
+                  {showSearchSources ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {showSearchSources ? "Sembunyikan Sumber Eksternal" : "Tampilkan Sumber Eksternal"}
+                </button>
+
+                {showSearchSources && (
+                  <div className="animate-fade-in" style={{
+                    marginTop: '0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                    background: 'rgba(255,255,255,0.02)',
+                    padding: '1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)'
+                  }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
+                      Situs Rujukan yang Digunakan:
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '0.75rem' }}>
+                      {searchSources.wikipedia && (
+                        <a
+                          href={searchSources.wikipedia.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '2px',
+                            padding: '0.6rem',
+                            background: 'rgba(255,255,255,0.03)',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(255,255,255,0.05)',
+                            textDecoration: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          className="hover-card"
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: '500' }}>
+                            <BookOpen size={12} color="#3b82f6" />
+                            Wikipedia: {searchSources.wikipedia.title}
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: '#3b82f6', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {searchSources.wikipedia.url}
+                          </div>
+                        </a>
+                      )}
+
+                      {searchSources.brave && searchSources.brave.map((source, idx) => (
+                        <a
+                          key={idx}
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '2px',
+                            padding: '0.6rem',
+                            background: 'rgba(255,255,255,0.03)',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(255,255,255,0.05)',
+                            textDecoration: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          className="hover-card"
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: '500' }}>
+                            <Search size={12} color="var(--accent-color)" />
+                            {source.title}
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--accent-color)', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {source.url}
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

@@ -1,5 +1,6 @@
 import requests
 import time
+import re
 from typing import Dict, List, Optional, Tuple
 from threading import Lock
 
@@ -280,15 +281,21 @@ class SearchAggregator:
         if search_results.get("wikipedia_summary"):
             sections.append(f"""<wikipedia_context>
 {search_results['wikipedia_summary']}
-Source: {search_results.get('wikipedia_url', 'Wikipedia')}
+Reference: Wikipedia
 </wikipedia_context>""")
         
         # Brave/Web results section
         if search_results.get("brave_results"):
             web_sources = []
             for idx, result in enumerate(search_results["brave_results"][:5], 1):
+                # Extract domain name for cleaner reference
+                domain = result['url']
+                match = re.search(r'https?://(?:www\.)?([^/]+)', result['url'])
+                if match:
+                    domain = match.group(1)
+                
                 web_sources.append(
-                    f"{idx}. **{result['title']}**\n   {result['snippet']}\n   Source: {result['url']}"
+                    f"{idx}. **{result['title']}**\n   {result['snippet']}\n   Reference: {domain}"
                 )
             
             if web_sources:
