@@ -315,15 +315,14 @@ class SearchAggregator:
                     if new_results:
                         if relevance_evaluator:
                             # Evaluate relevance using AI callback
-                            # Note: This is usually async, but aggregator is synchronous for now. 
-                            # We might need to run it in a thread or make aggregator async.
-                            # For simplicity of integration, let's assume it's callable.
                             try:
-                                # In a real implementation, we might use anyio.to_thread if needed
-                                relevance_mask = relevance_evaluator(new_results, book_info)
-                                for idx, is_relevant in enumerate(relevance_mask):
-                                    if is_relevant:
-                                        informative_results.append(new_results[idx])
+                                # relevance_evaluator returns a list of labels ("scholarly", "general", "shallow")
+                                relevance_labels = relevance_evaluator(new_results, book_info)
+                                for idx, label in enumerate(relevance_labels):
+                                    if label in ["scholarly", "general"]:
+                                        res_to_add = new_results[idx]
+                                        res_to_add['quality_label'] = label
+                                        informative_results.append(res_to_add)
                             except Exception as e:
                                 results["search_metadata"]["errors"].append(f"AI Eval failed: {e}")
                                 # Fallback: take all non-excluded results if AI fails
@@ -363,7 +362,7 @@ class SearchAggregator:
         if search_results.get("wikipedia_summary"):
             sections.append(f"""<wikipedia_context>
 {search_results['wikipedia_summary']}
-Reference: Wikipedia
+Reference: Wikipedia [High Weight]
 </wikipedia_context>""")
         
         # Brave/Web results section
@@ -371,13 +370,13 @@ Reference: Wikipedia
             web_sources = []
             for idx, result in enumerate(search_results["brave_results"][:5], 1):
                 # Extract domain name for cleaner reference
-                domain = result['url']
                 match = re.search(r'https?://(?:www\.)?([^/]+)', result['url'])
-                if match:
-                    domain = match.group(1)
+                domain = match.group(1) if match else result['url']
+                
+                label = result.get('quality_label', 'general').upper()
                 
                 web_sources.append(
-                    f"{idx}. **{result['title']}**\n   {result['snippet']}\n   Reference: {domain}"
+                    f"{idx}. **{result['title']}**\n   {result['snippet']}\n   Reference: {domain} [Quality: {label}]"
                 )
             
             if web_sources:

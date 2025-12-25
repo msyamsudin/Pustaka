@@ -199,13 +199,13 @@ Your goal is to transform content into 3 CONSOLIDATED PRIMARY SECTIONS.
 <claim_tagging_policy>
 Explicitly label every important claim/statement with ONE of these tags:
 - [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
-- [Rujukan Eksternal: Nama Sumber] : Information or context derived from external search/Wikipedia. MUST be used for scholarly context (e.g., [Rujukan Eksternal: Brill/JSTOR]).
+- [Rujukan Eksternal: Nama Sumber] : Information or context derived from external search/Wikipedia. MUST be used for scholarly or general high-quality context (e.g., [Rujukan Eksternal: Brill/JSTOR] or [Rujukan Eksternal: BBC/Tirto]).
 </claim_tagging_policy>
 
 <scholarly_policy>
-1. Padukan berbagai perspektif, terutama membandingkan teks primer dengan historiografi akademik.
-2. Jika merujuk sumber eksternal, beri prioritas pada edisi kritis, tokoh akademik, atau temuan peer-reviewed.
-3. Hindari parafrasa dangkal; fokus pada "intellectual positioning" dan bobot historis dari argumen.
+1. Padukan berbagai perspektif, terutama membandingkan teks primer dengan historiografi akademik dan analisis publik berkualitas tinggi (General High Quality).
+2. Jika merujuk sumber eksternal, beri prioritas pada edisi kritis, tokoh akademik/pakar, atau ulasan mendalam dari media kredibel.
+3. Hindari parafrasa dangkal; fokus pada "intellectual positioning" dan bobot historis/analitis dari argumen.
 </scholarly_policy>
 
 <output_structure>
@@ -766,10 +766,10 @@ Explicitly label every important claim/statement with ONE of these tags:
             return res
         except Exception as e: return {"error": str(e)}
 
-    def _evaluate_search_relevance(self, results: List[Dict], book_info: Dict) -> List[bool]:
+    def _evaluate_search_relevance(self, results: List[Dict], book_info: Dict) -> List[str]:
         """
         Uses AI to evaluate the relevance and quality of search results.
-        Returns a list of booleans corresponding to each result.
+        Returns a list of labels ("scholarly", "general", or "shallow").
         """
         if not results: return []
         
@@ -780,22 +780,21 @@ Explicitly label every important claim/statement with ONE of these tags:
         
         results_str = "\n---\n".join(formatted_results)
         
-        prompt = f"""<role>SCHOLARLY RELEVANCE EVALUATOR</role>
+        prompt = f"""<role>SCHOLARLY & QUALITY RELEVANCE EVALUATOR</role>
 <context>Book: "{book_info.get('title')}" by {book_info.get('author')}</context>
-<task>Evaluate the ACADEMIC WEIGHT and SCHOLARLY DEPTH of the following search results.</task>
+<task>Evaluate the ACADEMIC WEIGHT and CONTENT QUALITY of the following search results.</task>
 
 <results>
 {results_str}
 </results>
 
 <instructions>
-1. Evaluate each result based on its credibility and depth.
-2. Prioritize: Journal articles, academic publishers (e.g. Brill, Oxford, KITLV), critical reviews by scholars, historical manuscripts, or historiography.
-3. Penalize: Generic blog posts (WordPress, Blogspot), book catalogs (Gramedia, Play Store), or shallow summaries.
-4. Return a JSON object with a "relevance" key containing an array of booleans.
-5. True = High Quality/Scholarly/Critical Analysis.
-6. False = Shallow/Commerce/Weak Blog.
-6. Example: {{"relevance": [true, false, true]}}
+1. Categorize each result into ONE of these three levels:
+   - "scholarly": Journal articles, academic publishers (Brill, Oxford, KITLV), critical reviews by scholars, historical manuscripts, or peer-reviewed findings.
+   - "general": High-quality long-form articles, reputable news analysis (BBC, NYT, Tirto, Kompas), detailed book reviews from verified enthusiasts/critics, or institutional reports.
+   - "shallow": Generic blog posts (WordPress, Blogspot), book catalogs/commerce (Gramedia, Play Store, Tokopedia), shallow buzzword-filled summaries, or unrelated content.
+2. Return a JSON object with a "relevance" key containing an array of strings (the labels).
+3. Example: {{"relevance": ["scholarly", "general", "shallow"]}}
 </instructions>
 RESPONSE ONLY WITH THE JSON OBJECT."""
 
@@ -807,7 +806,7 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
             else:
                 if not self.client:
                     print("[RELEVANCE_EVAL_WARNING] AI client not initialized for evaluation, skipping AI check.")
-                    return [True] * len(results)
+                    return ["general"] * len(results)
                     
                 with self._client_lock:
                     c = self.client.chat.completions.create(
@@ -820,17 +819,17 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
             
             # Parse JSON object
             data = json.loads(content)
-            relevance_mask = data.get("relevance")
+            relevance_labels = data.get("relevance")
             
-            if isinstance(relevance_mask, list) and len(relevance_mask) == len(results):
-                return [bool(x) for x in relevance_mask]
+            if isinstance(relevance_labels, list) and len(relevance_labels) == len(results):
+                return [str(x).lower() for x in relevance_labels]
             
             print(f"[RELEVANCE_EVAL_DEBUG] Fallback: AI response was not a valid object with 'relevance' list: {content}")
         except Exception as e:
             print(f"[RELEVANCE_EVAL_ERROR] {e}")
             
-        # Fallback: keep everything if AI fails, let manual excludes handle it
-        return [True] * len(results)
+        # Fallback: mark as general if AI fails
+        return ["general"] * len(results)
 
     async def summarize_stream(self, book_metadata: List[Dict], partial_content: Optional[str] = None) -> AsyncGenerator[str, None]:
         """Streaming summarize"""
