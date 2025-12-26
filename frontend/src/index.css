@@ -162,6 +162,22 @@ option {
   }
 }
 
+@keyframes flash-update {
+  0% {
+    background-color: rgba(16, 185, 129, 0.2); /* Green flash */
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.content-updated {
+  animation: flash-update 1.5s ease-out;
+  border-radius: 8px; /* Ensure flash respects card border */
+}
+
 @keyframes slideUp {
   from {
     opacity: 0;

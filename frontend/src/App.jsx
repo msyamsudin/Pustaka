@@ -338,6 +338,54 @@ const SkeletonSummary = ({ status, progress, onStop }) => (
   </div>
 );
 
+const IterativeProgress = ({ stats }) => {
+  if (!stats) return null;
+  const steps = stats.steps || [];
+  const currentStep = steps[steps.length - 1] || {};
+
+  return (
+    <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem', border: '1px solid var(--accent-color)', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ background: 'rgba(var(--accent-rgb), 0.1)', padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--accent-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Sparkles size={16} /> Iterative Self-Correction
+        </h3>
+        <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
+          Iteration {stats.iteration || 1}/3
+        </span>
+      </div>
+
+      <div style={{ padding: '1.5rem' }}>
+        {steps.map((step, idx) => (
+          <div key={idx} style={{ marginBottom: '1rem', paddingLeft: '1rem', borderLeft: '2px solid var(--border-color)', position: 'relative' }}>
+            <div style={{ position: 'absolute', left: '-6px', top: '0', width: '10px', height: '10px', borderRadius: '50%', background: idx === steps.length - 1 ? 'var(--accent-color)' : 'var(--text-secondary)' }}></div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '4px' }}>
+              {step.type === 'draft' && `Draft ${step.iteration}`}
+              {step.type === 'critic' && `Critic Analysis (Score: ${step.score})`}
+              {step.type === 'refine' && `Refining Draft...`}
+            </div>
+
+            {step.type === 'critic' && step.issues && step.issues.length > 0 && (
+              <div style={{ background: 'rgba(255,0,0,0.1)', padding: '0.5rem', borderRadius: '4px', marginTop: '4px' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--error)', fontWeight: 'bold' }}>Issues Identified:</div>
+                <ul style={{ margin: '4px 0 0 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  {step.issues.map((issue, i) => <li key={i}>{issue}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {stats.status && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1rem', color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.9rem' }}>
+            <div className="spinner" style={{ width: '14px', height: '14px' }}></div>
+            {stats.status}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const MetadataEditModal = ({ isOpen, book, title, author, isbn, genre, setTitle, setAuthor, setIsbn, setGenre, onSave, onClose, isSaving }) => {
   if (!isOpen || !book) return null;
 
@@ -428,6 +476,9 @@ function App() {
   const [showSearchSources, setShowSearchSources] = useState(false);
   const [isNotionSharing, setIsNotionSharing] = useState(false);
   const [availableModels, setAvailableModels] = useState([]);
+  const [iterativeMode, setIterativeMode] = useState(false);
+  const [criticModel, setCriticModel] = useState('same');
+  const [iterativeStats, setIterativeStats] = useState(null); // { iteration: 1, steps: [], status: '' }
   const [keyValid, setKeyValid] = useState(null); // null, true, false
   const [keyError, setKeyError] = useState('');
   const [validatingKey, setValidatingKey] = useState(false);
@@ -463,6 +514,9 @@ function App() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedVariantIds, setSelectedVariantIds] = useState([]);
   const abortControllerRef = useRef(null);
+
+  // Visual Feedback State
+  const [isUpdated, setIsUpdated] = useState(false);
 
   const [isStuck, setIsStuck] = useState(false);
   const headerRef = useRef(null);
@@ -1218,8 +1272,9 @@ function App() {
       setProgress(0);
       setSearchSources(null);
       setShowSearchSources(false);
+      setIterativeStats(null); // Reset stats
     }
-    setStreamingStatus(isResume ? "Re-establishing knowledge gateway..." : "Initializing synthesis engine...");
+    setStreamingStatus(isResume ? "Re-establishing knowledge gateway..." : (iterativeMode ? "Initializing Iterative Mode..." : "Initializing synthesis engine..."));
 
     abortControllerRef.current = new AbortController();
 
@@ -1240,7 +1295,9 @@ function App() {
           base_url: overrideConfig ? overrideConfig.base_url : (provider === 'Ollama' ? ollamaBaseUrl : null),
           partial_content: isResume ? summary : null,
           enhance_quality: highQuality,
-          draft_count: highQuality ? draftCount : 1
+          draft_count: highQuality ? draftCount : 1,
+          iterative_mode: iterativeMode,
+          critic_model: criticModel === 'same' ? null : criticModel
         }),
       });
 
@@ -1282,7 +1339,7 @@ function App() {
                 setProgress(data.progress);
               }
 
-              if (data.content) {
+              if (data.content && !data.event) {
                 if (firstChunk) {
                   setStreamingStatus(isResume ? "Resuming synthesis flow..." : "Generating intelligence brief...");
                   firstChunk = false;
@@ -1310,6 +1367,36 @@ function App() {
                   setSearchSources(data.search_sources);
                 }
               }
+
+              // Iterative Mode Events
+              if (data.event) {
+                // If event brings full content (Draft/Refine Complete), REPLACE the summary
+                if (data.content && (data.event === 'draft_complete' || data.event === 'refine_complete')) {
+                  accumulatedSummary = data.content; // REPLACE, don't append
+                  setSummary(accumulatedSummary);
+
+                  // Trigger Visual Feedback
+                  setIsUpdated(true);
+                  setTimeout(() => setIsUpdated(false), 1500);
+                }
+
+                setIterativeStats(prev => {
+                  const current = prev || { steps: [], iteration: 1 };
+                  const newSteps = [...current.steps];
+
+                  if (data.event === 'draft_complete') {
+                    newSteps.push({ type: 'draft', iteration: current.iteration });
+                  } else if (data.event === 'score') {
+                    newSteps.push({ type: 'critic', score: data.score, issues: data.issues, iteration: data.iteration });
+                    return { ...current, steps: newSteps, iteration: data.iteration };
+                  } else if (data.event === 'refine_start') {
+                    newSteps.push({ type: 'refine', iteration: current.iteration });
+                  }
+
+                  return { ...current, steps: newSteps, status: data.status };
+                });
+              }
+
             } catch (e) {
               console.error("Error parsing stream chunk", e, line);
             }
@@ -1799,390 +1886,328 @@ function App() {
         {/* Settings Modal/Panel */}
         {showSettings && (
           <div className="glass-card animate-fade-in" style={{
-            marginBottom: '2rem',
-            border: '1px solid var(--border-color)',
-            padding: '1.5rem'
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '90%',
+            maxWidth: '600px',
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            zIndex: 1000,
+            padding: '1.5rem',
           }}>
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <Settings size={20} color="var(--text-secondary)" />
-                Konfigurasi OpenRouter
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Settings size={18} /> Konfigurasi AI
               </h3>
-              <button
-                onClick={() => setShowSettings(false)}
-                className="btn-secondary"
-                style={{ padding: '0.25rem', minWidth: 'auto', border: 'none', background: 'none' }}
-              >
-                <X size={20} />
-              </button>
+              <button onClick={() => setShowSettings(false)} className="icon-btn"><X size={18} /></button>
             </div>
 
-            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-              <button
-                onClick={() => { setProvider('OpenRouter'); validateApiKey(openRouterKey, true, 'OpenRouter'); }}
-                style={{
-                  background: 'none', border: 'none', color: provider === 'OpenRouter' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                  fontWeight: provider === 'OpenRouter' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
-                  borderBottom: provider === 'OpenRouter' ? '2px solid var(--accent-color)' : 'none'
-                }}
-              >
-                OpenRouter
-              </button>
-              <button
-                onClick={() => { setProvider('Groq'); validateApiKey(groqKey, true, 'Groq'); }}
-                style={{
-                  background: 'none', border: 'none', color: provider === 'Groq' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                  fontWeight: provider === 'Groq' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
-                  borderBottom: provider === 'Groq' ? '2px solid var(--accent-color)' : 'none'
-                }}
-              >
-                Groq
-              </button>
-              <button
-                onClick={() => { setProvider('Ollama'); validateApiKey(null, true, 'Ollama', ollamaBaseUrl); }}
-                style={{
-                  background: 'none', border: 'none', color: provider === 'Ollama' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                  fontWeight: provider === 'Ollama' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
-                  borderBottom: provider === 'Ollama' ? '2px solid var(--accent-color)' : 'none'
-                }}
-              >
-                Ollama (Local)
-              </button>
-            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              {provider === 'OpenRouter' ? (
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                    OpenRouter API Key
-                  </label>
-                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-                    <div style={{ position: 'relative', flex: 1 }}>
-                      <input
-                        type={showApiKey ? "text" : "password"}
-                        value={openRouterKey}
-                        onChange={(e) => setOpenRouterKey(e.target.value)}
-                        className="input-field"
-                        placeholder="sk-or-v1-..."
-                        style={{
-                          paddingRight: '3rem',
-                          marginBottom: 0,
-                          borderColor: keyValid === true ? 'var(--success)' : (keyValid === false ? 'var(--error)' : 'var(--border-color)')
-                        }}
-                      />
-                      <div style={{
-                        position: 'absolute', right: '0.5rem', top: '0', height: '100%',
-                        display: 'flex', alignItems: 'center', pointerEvents: 'none'
-                      }}>
-                        <button
-                          type="button"
-                          onClick={() => setShowApiKey(!showApiKey)}
-                          style={{
-                            background: 'none', border: 'none', color: 'var(--text-secondary)',
-                            cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
-                          }}
-                        >
-                          {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => validateApiKey(openRouterKey, true)}
-                      disabled={validatingKey || !openRouterKey}
-                      className="btn-secondary"
-                      style={{ height: '42px', minWidth: '42px' }}
-                    >
-                      {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
-                    </button>
-                  </div>
-                </div>
-              ) : provider === 'Groq' ? (
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                    Groq API Key
-                  </label>
-                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-                    <div style={{ position: 'relative', flex: 1 }}>
-                      <input
-                        type={showApiKey ? "text" : "password"}
-                        value={groqKey}
-                        onChange={(e) => setGroqKey(e.target.value)}
-                        className="input-field"
-                        placeholder="gsk_..."
-                        style={{
-                          paddingRight: '3rem',
-                          marginBottom: 0,
-                          borderColor: keyValid === true ? 'var(--success)' : (keyValid === false ? 'var(--error)' : 'var(--border-color)')
-                        }}
-                      />
-                      <div style={{
-                        position: 'absolute', right: '0.5rem', top: '0', height: '100%',
-                        display: 'flex', alignItems: 'center', pointerEvents: 'none'
-                      }}>
-                        <button
-                          type="button"
-                          onClick={() => setShowApiKey(!showApiKey)}
-                          style={{
-                            background: 'none', border: 'none', color: 'var(--text-secondary)',
-                            cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
-                          }}
-                        >
-                          {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => validateApiKey(groqKey, true, 'Groq')}
-                      disabled={validatingKey || !groqKey}
-                      className="btn-secondary"
-                      style={{ height: '42px', minWidth: '42px' }}
-                    >
-                      {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                    Ollama Base URL
-                  </label>
-                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-                    <input
-                      type="text"
-                      value={ollamaBaseUrl}
-                      onChange={(e) => setOllamaBaseUrl(e.target.value)}
-                      className="input-field"
-                      placeholder="http://localhost:11434"
-                      style={{ marginBottom: 0, flex: 1 }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => validateApiKey(null, true, 'Ollama', ollamaBaseUrl)}
-                      disabled={validatingKey}
-                      className="btn-secondary"
-                      style={{ height: '42px', minWidth: '42px' }}
-                    >
-                      {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
-                    </button>
-                  </div>
-                </div>
-              )}
 
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                  Default AI Model ({provider})
-                </label>
-                <SearchableSelect
-                  options={availableModels}
-                  value={provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)}
-                  onChange={(val) => {
-                    if (provider === 'OpenRouter') {
-                      setOpenRouterModel(val);
-                      saveConfig({ openrouter_model: val });
-                    } else if (provider === 'Groq') {
-                      setGroqModel(val);
-                      saveConfig({ groq_model: val });
-                    } else {
-                      setOllamaModel(val);
-                      saveConfig({ ollama_model: val });
-                    }
+            <div style={{ marginTop: '1rem' }}>
+
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                <button
+                  onClick={() => { setProvider('OpenRouter'); validateApiKey(openRouterKey, true, 'OpenRouter'); }}
+                  style={{
+                    background: 'none', border: 'none', color: provider === 'OpenRouter' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                    fontWeight: provider === 'OpenRouter' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
+                    borderBottom: provider === 'OpenRouter' ? '2px solid var(--accent-color)' : 'none'
                   }}
-                  placeholder="Pilih model..."
-                />
+                >
+                  OpenRouter
+                </button>
+                <button
+                  onClick={() => { setProvider('Groq'); validateApiKey(groqKey, true, 'Groq'); }}
+                  style={{
+                    background: 'none', border: 'none', color: provider === 'Groq' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                    fontWeight: provider === 'Groq' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
+                    borderBottom: provider === 'Groq' ? '2px solid var(--accent-color)' : 'none'
+                  }}
+                >
+                  Groq
+                </button>
+                <button
+                  onClick={() => { setProvider('Ollama'); validateApiKey(null, true, 'Ollama', ollamaBaseUrl); }}
+                  style={{
+                    background: 'none', border: 'none', color: provider === 'Ollama' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                    fontWeight: provider === 'Ollama' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
+                    borderBottom: provider === 'Ollama' ? '2px solid var(--accent-color)' : 'none'
+                  }}
+                >
+                  Ollama (Local)
+                </button>
               </div>
 
-              <div style={{ marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
-                <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Share2 size={18} color="var(--accent-color)" />
-                  Konfigurasi Notion
-                </h4>
-                <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {provider === 'OpenRouter' ? (
                   <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                      Notion API Key
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      OpenRouter API Key
                     </label>
-                    <input
-                      type="password"
-                      value={notionApiKey}
-                      onChange={(e) => {
-                        setNotionApiKey(e.target.value);
-                        saveConfig({ notion_api_key: e.target.value });
-                      }}
-                      className="input-field"
-                      placeholder="secret_..."
-                      style={{ marginBottom: 0 }}
-                    />
+                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                      <div style={{ position: 'relative', flex: 1 }}>
+                        <input
+                          type={showApiKey ? "text" : "password"}
+                          value={openRouterKey}
+                          onChange={(e) => setOpenRouterKey(e.target.value)}
+                          className="input-field"
+                          placeholder="sk-or-v1-..."
+                          style={{
+                            paddingRight: '3rem',
+                            marginBottom: 0,
+                            borderColor: keyValid === true ? 'var(--success)' : (keyValid === false ? 'var(--error)' : 'var(--border-color)')
+                          }}
+                        />
+                        <div style={{
+                          position: 'absolute', right: '0.5rem', top: '0', height: '100%',
+                          display: 'flex', alignItems: 'center', pointerEvents: 'none'
+                        }}>
+                          <button
+                            type="button"
+                            onClick={() => setShowApiKey(!showApiKey)}
+                            style={{
+                              background: 'none', border: 'none', color: 'var(--text-secondary)',
+                              cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
+                            }}
+                          >
+                            {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => validateApiKey(openRouterKey, true)}
+                        disabled={validatingKey || !openRouterKey}
+                        className="btn-secondary"
+                        style={{ height: '42px', minWidth: '42px' }}
+                      >
+                        {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
+                      </button>
+                    </div>
                   </div>
+                ) : provider === 'Groq' ? (
                   <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                      Database ID
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      Groq API Key
                     </label>
-                    <input
-                      type="text"
-                      value={notionDatabaseId}
-                      onChange={(e) => {
-                        setNotionDatabaseId(e.target.value);
-                        saveConfig({ notion_database_id: e.target.value });
-                      }}
-                      className="input-field"
-                      placeholder="32 chars ID"
-                      style={{ marginBottom: 0 }}
-                    />
+                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                      <div style={{ position: 'relative', flex: 1 }}>
+                        <input
+                          type={showApiKey ? "text" : "password"}
+                          value={groqKey}
+                          onChange={(e) => setGroqKey(e.target.value)}
+                          className="input-field"
+                          placeholder="gsk_..."
+                          style={{
+                            paddingRight: '3rem',
+                            marginBottom: 0,
+                            borderColor: keyValid === true ? 'var(--success)' : (keyValid === false ? 'var(--error)' : 'var(--border-color)')
+                          }}
+                        />
+                        <div style={{
+                          position: 'absolute', right: '0.5rem', top: '0', height: '100%',
+                          display: 'flex', alignItems: 'center', pointerEvents: 'none'
+                        }}>
+                          <button
+                            type="button"
+                            onClick={() => setShowApiKey(!showApiKey)}
+                            style={{
+                              background: 'none', border: 'none', color: 'var(--text-secondary)',
+                              cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
+                            }}
+                          >
+                            {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => validateApiKey(groqKey, true, 'Groq')}
+                        disabled={validatingKey || !groqKey}
+                        className="btn-secondary"
+                        style={{ height: '42px', minWidth: '42px' }}
+                      >
+                        {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
-                <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Search size={18} color="var(--accent-color)" />
-                  Search Enrichment (Experimental)
-                </h4>
-
-                <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                    Memperkaya rangkuman dengan informasi dari <strong>Wikipedia</strong> (gratis) dan <strong>Brave Search</strong> (memerlukan API key).
-                  </p>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                ) : (
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '500', marginBottom: '0.25rem' }}>
-                      Enable Search Enrichment
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      Ollama Base URL
                     </label>
-                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      Aktifkan pencarian otomatis saat generate rangkuman
-                    </p>
+                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                      <input
+                        type="text"
+                        value={ollamaBaseUrl}
+                        onChange={(e) => setOllamaBaseUrl(e.target.value)}
+                        className="input-field"
+                        placeholder="http://localhost:11434"
+                        style={{ marginBottom: 0, flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => validateApiKey(null, true, 'Ollama', ollamaBaseUrl)}
+                        disabled={validatingKey}
+                        className="btn-secondary"
+                        style={{ height: '42px', minWidth: '42px' }}
+                      >
+                        {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
+                      </button>
+                    </div>
                   </div>
-                  <label style={{ position: 'relative', display: 'inline-block', width: '48px', height: '24px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={enableSearchEnrichment}
-                      onChange={(e) => {
-                        setEnableSearchEnrichment(e.target.checked);
-                        saveConfig({ enable_search_enrichment: e.target.checked });
-                      }}
-                      style={{ opacity: 0, width: 0, height: 0 }}
-                    />
-                    <span style={{
-                      position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-                      backgroundColor: enableSearchEnrichment ? 'var(--accent-color)' : 'var(--border-color)',
-                      transition: '0.3s', borderRadius: '24px'
-                    }}>
-                      <span style={{
-                        position: 'absolute', content: '', height: '18px', width: '18px', left: enableSearchEnrichment ? '26px' : '3px',
-                        bottom: '3px', backgroundColor: 'white', transition: '0.3s', borderRadius: '50%'
-                      }}></span>
-                    </span>
-                  </label>
-                </div>
+                )}
 
                 <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    Brave Search API Key (Optional)
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                    Default AI Model ({provider})
                   </label>
-                  <div style={{ display: 'flex', gap: '0.75rem' }}>
-                    <div style={{ position: 'relative', flex: 1 }}>
-                      <input
-                        type={showBraveKey ? "text" : "password"}
-                        value={braveApiKey}
-                        onChange={(e) => {
-                          setBraveApiKey(e.target.value);
-                          saveConfig({ brave_api_key: e.target.value });
-                        }}
-                        className="input-field"
-                        placeholder="BSA..."
-                        style={{
-                          paddingRight: '3rem',
-                          marginBottom: 0,
-                          borderColor: braveKeyValid === true ? 'var(--success)' : (braveKeyValid === false ? 'var(--error)' : 'var(--border-color)')
-                        }}
-                      />
-                      <div style={{
-                        position: 'absolute', right: '0.5rem', top: '0', height: '100%',
-                        display: 'flex', alignItems: 'center', pointerEvents: 'none'
-                      }}>
-                        <button
-                          type="button"
-                          onClick={() => setShowBraveKey(!showBraveKey)}
-                          style={{
-                            background: 'none', border: 'none', color: 'var(--text-secondary)',
-                            cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
-                          }}
-                        >
-                          {showBraveKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!braveApiKey) return;
-                        setValidatingBraveKey(true);
-                        try {
-                          const res = await axios.post(`${API_BASE_URL}/search/test`, { brave_api_key: braveApiKey });
-                          if (res.data.valid) {
-                            setBraveKeyValid(true);
-                            showToast('Brave API key valid!', 'success');
-                          }
-                        } catch (err) {
-                          setBraveKeyValid(false);
-                          showAlert('Invalid Key', err.response?.data?.detail || 'Brave API key tidak valid');
-                        } finally {
-                          setValidatingBraveKey(false);
-                        }
-                      }}
-                      disabled={validatingBraveKey || !braveApiKey}
-                      className="btn-secondary"
-                      style={{ height: '42px', minWidth: '42px' }}
-                      title="Test Brave API Key"
-                    >
-                      {validatingBraveKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
-                    </button>
-                  </div>
-                  <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                    Dapatkan API key gratis (2,000 queries/bulan) di <a href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-color)' }}>brave.com/search/api</a>
-                  </p>
+                  <SearchableSelect
+                    options={availableModels}
+                    value={provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)}
+                    onChange={(val) => {
+                      if (provider === 'OpenRouter') {
+                        setOpenRouterModel(val);
+                        saveConfig({ openrouter_model: val });
+                      } else if (provider === 'Groq') {
+                        setGroqModel(val);
+                        saveConfig({ groq_model: val });
+                      } else {
+                        setOllamaModel(val);
+                        saveConfig({ ollama_model: val });
+                      }
+                    }}
+                    placeholder="Pilih model..."
+                  />
                 </div>
 
-                <div style={{ marginTop: '1rem' }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    Max Search Results
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      value={searchMaxResults}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value);
-                        setSearchMaxResults(val);
-                        saveConfig({ search_max_results: val });
-                      }}
-                      className="custom-range"
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ fontSize: '0.9rem', fontWeight: 'bold', minWidth: '24px', textAlign: 'center', color: 'var(--text-primary)' }}>
-                      {searchMaxResults}
-                    </span>
+                <div style={{ marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
+                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Share2 size={18} color="var(--accent-color)" />
+                    Konfigurasi Notion
+                  </h4>
+                  <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        Notion API Key
+                      </label>
+                      <input
+                        type="password"
+                        value={notionApiKey}
+                        onChange={(e) => {
+                          setNotionApiKey(e.target.value);
+                          saveConfig({ notion_api_key: e.target.value });
+                        }}
+                        className="input-field"
+                        placeholder="secret_..."
+                        style={{ marginBottom: 0 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        Database ID
+                      </label>
+                      <input
+                        type="text"
+                        value={notionDatabaseId}
+                        onChange={(e) => {
+                          setNotionDatabaseId(e.target.value);
+                          saveConfig({ notion_database_id: e.target.value });
+                        }}
+                        className="input-field"
+                        placeholder="32 chars ID"
+                        style={{ marginBottom: 0 }}
+                      />
+                    </div>
                   </div>
-                  <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    Jumlah hasil pencarian (1-10)
+                </div>
+
+                <div style={{ marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
+                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Search size={18} color="var(--accent-color)" />
+                    Search Configuration
+                  </h4>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      Brave Search API Key
+                    </label>
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <div style={{ position: 'relative', flex: 1 }}>
+                        <input
+                          type={showBraveKey ? "text" : "password"}
+                          value={braveApiKey}
+                          onChange={(e) => {
+                            setBraveApiKey(e.target.value);
+                            saveConfig({ brave_api_key: e.target.value });
+                          }}
+                          className="input-field"
+                          placeholder="BSA..."
+                          style={{
+                            paddingRight: '3rem',
+                            marginBottom: 0,
+                            borderColor: braveKeyValid === true ? 'var(--success)' : (braveKeyValid === false ? 'var(--error)' : 'var(--border-color)')
+                          }}
+                        />
+                        <div style={{
+                          position: 'absolute', right: '0.5rem', top: '0', height: '100%',
+                          display: 'flex', alignItems: 'center', pointerEvents: 'none'
+                        }}>
+                          <button
+                            type="button"
+                            onClick={() => setShowBraveKey(!showBraveKey)}
+                            style={{
+                              background: 'none', border: 'none', color: 'var(--text-secondary)',
+                              cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
+                            }}
+                          >
+                            {showBraveKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!braveApiKey) return;
+                          setValidatingBraveKey(true);
+                          try {
+                            const res = await axios.post(`${API_BASE_URL}/search/test`, { brave_api_key: braveApiKey });
+                            if (res.data.valid) {
+                              setBraveKeyValid(true);
+                              showToast('Brave API key valid!', 'success');
+                            }
+                          } catch (err) {
+                            setBraveKeyValid(false);
+                            showAlert('Invalid Key', err.response?.data?.detail || 'Brave API key tidak valid');
+                          } finally {
+                            setValidatingBraveKey(false);
+                          }
+                        }}
+                        disabled={validatingBraveKey || !braveApiKey}
+                        className="btn-secondary"
+                        style={{ height: '42px', minWidth: '42px' }}
+                        title="Test Brave API Key"
+                      >
+                        {validatingBraveKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+
+                <div style={{
+                  marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)',
+                  display: 'flex', justifyContent: 'flex-end'
+                }}>
+                  {keyError && <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginRight: 'auto' }}>{keyError}</p>}
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, fontStyle: 'italic' }}>
+                    Pengaturan disimpan secara otomatis.
                   </p>
                 </div>
               </div>
-            </div>
-
-            <div style={{
-              marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)',
-              display: 'flex', justifyContent: 'flex-end'
-            }}>
-              {keyError && <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginRight: 'auto' }}>{keyError}</p>}
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, fontStyle: 'italic' }}>
-                Pengaturan disimpan secara otomatis.
-              </p>
             </div>
           </div>
         )}
@@ -2545,6 +2570,7 @@ function App() {
                   {!summary && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
                       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '0.5rem' }}>
+                        {/* Analytical Refining Toggle */}
                         <div style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -2554,7 +2580,11 @@ function App() {
                           borderRadius: '20px',
                           border: '1px solid var(--border-color)',
                           cursor: 'pointer'
-                        }} onClick={() => setHighQuality(!highQuality)}>
+                        }} onClick={() => {
+                          const newVal = !highQuality;
+                          setHighQuality(newVal);
+                          if (newVal) setIterativeMode(false); // Mutually exclusive
+                        }}>
                           <div className={`toggle-switch ${highQuality ? 'active' : ''}`} style={{
                             width: '36px', height: '18px', background: highQuality ? 'var(--success)' : '#333',
                             borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
@@ -2570,6 +2600,37 @@ function App() {
                           <Sparkles size={14} color={highQuality ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={highQuality ? 1 : 0.5} />
                         </div>
 
+                        {/* Iterative Self-Correction Toggle */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          background: 'rgba(255,255,255,0.03)',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '20px',
+                          border: '1px solid var(--border-color)',
+                          cursor: 'pointer'
+                        }} onClick={() => {
+                          const newVal = !iterativeMode;
+                          setIterativeMode(newVal);
+                          if (newVal) setHighQuality(false); // Mutually exclusive
+                        }}>
+                          <div className={`toggle-switch ${iterativeMode ? 'active' : ''}`} style={{
+                            width: '36px', height: '18px', background: iterativeMode ? 'var(--success)' : '#333',
+                            borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
+                          }}>
+                            <div style={{
+                              width: '14px', height: '14px', background: 'white', borderRadius: '50%',
+                              position: 'absolute', top: '2px', left: iterativeMode ? '20px' : '2px', transition: 'all 0.3s'
+                            }}></div>
+                          </div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: '500', color: iterativeMode ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
+                            Iterative Self-Correction
+                          </span>
+                          <RotateCcw size={14} color={iterativeMode ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={iterativeMode ? 1 : 0.5} />
+                        </div>
+
+                        {/* Search Enrichment Toggle */}
                         <div style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -2600,35 +2661,77 @@ function App() {
                         </div>
                       </div>
 
-                      {highQuality && !summary && (
-                        <div className="animate-fade-in" style={{
-                          width: '100%',
-                          maxWidth: '240px',
-                          background: 'rgba(255,255,255,0.02)',
-                          padding: '0.75rem',
-                          borderRadius: '12px',
-                          border: '1px solid var(--border-color)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.5rem'
-                        }}>
-                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>DRAFT DEPTH: {draftCount}</span>
+                      {/* Configuration Panels */}
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', width: '100%' }}>
+                        {highQuality && !summary && (
+                          <div className="animate-fade-in" style={{
+                            width: '100%',
+                            maxWidth: '240px',
+                            background: 'rgba(255,255,255,0.02)',
+                            padding: '0.75rem',
+                            borderRadius: '12px',
+                            border: '1px solid var(--border-color)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>DRAFT DEPTH: {draftCount}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="10"
+                              value={draftCount}
+                              onChange={(e) => setDraftCount(parseInt(e.target.value))}
+                              className="custom-range"
+                              style={{
+                                width: '100%',
+                                marginTop: '0.5rem'
+                              }}
+                            />
                           </div>
-                          <input
-                            type="range"
-                            min="1"
-                            max="10"
-                            value={draftCount}
-                            onChange={(e) => setDraftCount(parseInt(e.target.value))}
-                            className="custom-range"
-                            style={{
-                              width: '100%',
-                              marginTop: '0.5rem'
-                            }}
-                          />
-                        </div>
-                      )}
+                        )}
+
+                        {iterativeMode && !summary && (
+                          <div className="animate-fade-in" style={{
+                            width: '100%',
+                            maxWidth: '240px',
+                            background: 'rgba(255,255,255,0.02)',
+                            padding: '0.75rem',
+                            borderRadius: '12px',
+                            border: '1px solid var(--border-color)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Critic Model</span>
+                              <div style={{
+                                width: '14px', height: '14px', borderRadius: '50%', background: 'var(--bg-secondary)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--text-secondary)', cursor: 'help'
+                              }} title="Model used to critique and refine drafts">?</div>
+                            </div>
+                            <select
+                              className="input-field"
+                              value={criticModel}
+                              onChange={(e) => setCriticModel(e.target.value)}
+                              style={{
+                                fontSize: '0.75rem',
+                                padding: '0.3rem',
+                                marginBottom: 0,
+                                background: 'rgba(0,0,0,0.2)',
+                                border: '1px solid rgba(255,255,255,0.1)'
+                              }}
+                            >
+                              <option value="same">Same as Generator</option>
+                              {availableModels.map(m => (
+                                <option key={m} value={m}>{m.split('/').pop()}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
 
                       <button
                         onClick={() => handleSummarize(false)}
@@ -2689,8 +2792,11 @@ function App() {
           </div>
         )}
 
+        {/* Iterative Mode Progress */}
+        {iterativeStats && !showSettings && <IterativeProgress stats={iterativeStats} />}
+
         {/* Summary Result Area */}
-        {summarizing && !summary && !showSettings && <SkeletonSummary status={streamingStatus} progress={progress} onStop={() => abortControllerRef.current?.abort()} />}
+        {summarizing && !summary && !showSettings && !iterativeStats && <SkeletonSummary status={streamingStatus} progress={progress} onStop={() => abortControllerRef.current?.abort()} />}
 
         {/* Sentinel for sticky header detection - placed outside the animating card */}
         {summary && !showSettings && (
@@ -2983,7 +3089,7 @@ function App() {
               </div>
             </div>
 
-            <div className="markdown-content">
+            <div className={`markdown-content ${isUpdated ? 'content-updated' : ''}`}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -3434,10 +3540,10 @@ function App() {
             )}
           </div>
         )}
-      </div>
+      </div >
 
       {/* Custom Modals */}
-      <SimpleModal
+      < SimpleModal
         isOpen={alertModal.isOpen}
         title={alertModal.title}
         message={alertModal.message}

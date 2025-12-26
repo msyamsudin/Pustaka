@@ -32,6 +32,31 @@ class BookSummarizer:
         "MARKET & INTELLECTUAL POSITIONING": ["market", "positioning", "comparative", "komparatif", "posisi", "competitor", "pesaing"]
     }
 
+    # Sentralisasi Template Struktur untuk Unifikasi Output
+    CORE_STRUCTURE_PROMPT = """
+<output_structure_template>
+## 1. EXECUTIVE SUMMARY & CORE THESIS
+[Format: Paragraf (Ringkasan) + Poin-poin (Argumen Kunci) + Blockquote (Kutipan Ikonik)]
+- **Ringkasan Inti**: Satu paragraf kohesif (100-150 kata) yang mencakup tesis, metodologi, temuan utama, dan batasan.
+- **Tesis Utama & Argumen**: 4-6 poin bulet. Format: • **[Klaim]**: [Elaborasi] → [Implikasi].
+- **Kutipan Representatif**: > "Kutipan verbatim atau yang paling sesuai" — Penulis. Diikuti 1-2 kalimat analisis.
+
+## 2. ANALYTICAL FRAMEWORK
+[Format: Istilah Teknis (Glosarium) + Blueprint Logika (Penalaran)]
+- **Glosarium Terminologi**: 5-8 istilah teknis KUNCI yang didefinisikan ulang atau dioperasionalkan dalam buku. Format: **[Istilah]**: Definisi.
+- **Blueprint Penalaran**: 
+  A. Celah yang Diidentifikasi (Apa yang hilang dalam diskursus?)
+  B. Metodologi/Solusi yang Diusulkan (Pendekatan penulis)
+  C. Konvergensi Argumen & Simpulan Rasional (Hasil yang terbukti)
+
+## 3. MARKET & INTELLECTUAL POSITIONING
+[Format: Analisis Kontekstual]
+- **Kompetitor Langsung**: Kontras dengan 1-2 karya seminal lainnya.
+- **Unique Selling Proposition (USP)**: Nilai spesifik yang tidak ditemukan di tempat lain.
+- **Warisan Intelektual**: Aliran pemikiran yang dibangun atau ditantang.
+</output_structure_template>
+"""
+
     # Mapping tetap dibutuhkan untuk membaca format lama jika ada, 
     # tapi fokus utama adalah memproduksi format baru.
     NAME_MAPPINGS = {
@@ -209,32 +234,14 @@ Explicitly label every important claim/statement with ONE of these tags:
 </scholarly_policy>
 
 <output_structure>
-CRITICAL: YOU MUST PRODUCE EXACTLY THESE 3 HEADINGS. DO NOT ADD OR REMOVE SECTIONS.
-
-## 1. EXECUTIVE SUMMARY & CORE THESIS
-[Structure: Paragraph (Summary) + Bullets (Key Arguments) + Blockquote (Iconic Quote)]
-- **Core Summary**: One cohesive paragraph (100-150 words) covering thesis, methodology, key findings, and limitations.
-- **Core Thesis & Arguments**: 4-6 bullet points. Format: • **[Claim]**: [Elaboration] → [Implications].
-- **Representative Quote**: > "Verbatim or best-fit quote" — Author. Followed by 1-2 sentences of analysis.
-
-## 2. ANALYTICAL FRAMEWORK
-[Structure: Technical Terms (Glossary) + Logic Blueprint (Reasoning)]
-- **Glossary of Density**: 5-8 KEY technical terms redefined/operationalized in the book. Format: **[Term]**: Definition.
-- **Reasoning Blueprint**: 
-  A. Gap Identified (What's missing?)
-  B. Methodology/Proposed Solution (Author's approach)
-  C. Konvergensi Argumen & Simpulan Rasional (Proven result)
-
-## 3. MARKET & INTELLECTUAL POSITIONING
-[Structure: Contextual Analysis]
-- **Direct Competitors**: Contrast with 1-2 seminal works.
-- **Unique Selling Proposition (USP)**: Specific value not found elsewhere.
-- **Intellectual Heritage**: School of thought built upon or challenged.
+{self.CORE_STRUCTURE_PROMPT}
+CRITICAL: You MUST use the English Headers (##) and Indonesian labels exactly as defined above.
 </output_structure>
 
 <linguistic_guidelines>
 - Body content in **Bahasa Indonesia** (Formal-Academic).
-- Headers in **English** (as shown above).
+- Headers in **English** (as shown above). Use them exactly.
+- **Terminology**: You may use common English technical/business terms (e.g., "market positioning", "core thesis", "USP") if they are standard in academic/professional Indonesian discourse. Do not force-translate these if it sounds unnatural.
 - Maximum density. No filler.
 </linguistic_guidelines>
 """
@@ -261,13 +268,13 @@ Explicitly label every important claim/statement with ONE of these tags:
 </claim_tagging_policy>
 
 <instructions>
-1. Merge content: Combine 'Core Summary', 'Key Arguments', and 'Quote' into Section 1.
-2. Merge 'Glossary' and 'Reasoning Blueprint' into Section 2.
-3. Keep 'Positioning' as the final distinct section.
-4. Eliminate redundant strategic steps or limitations unless they are vital to positioning.
-5. Output ONLY the 3 sections below.
-6. Body content MUST be in Bahasa Indonesia (Formal-Academic). Headers MUST remain in English.
-8. APPLY CLAIM TAGGING: Label key statements with [Analisis Terintegrasi].
+1. Gabungkan Konten: Campurkan 'Ringkasan Inti', 'Tesis Utama & Argumen', dan 'Kutipan' ke dalam Bagian 1.
+2. Gabungkan 'Glosarium Terminologi' dan 'Blueprint Penalaran' ke dalam Bagian 2.
+3. Pertahankan 'Posisi Pasar & Intelektual' (Positioning) sebagai bagian akhir yang terpisah.
+4. Hilangkan langkah-langkah strategis atau batasan yang redundan kecuali jika sangat vital bagi posisi buku tersebut.
+5. Output HANYA menghasilkan 3 bagian di bawah ini.
+6. Konten body HARUS dalam Bahasa Indonesia (Formal-Akademik). Header HARUS tetap dalam Bahasa Inggris.
+8. TERAPKAN LABEL KLAIM: Tandai pernyataan kunci dengan [Analisis Terintegrasi].
 </instructions>
 
 <output_structure>
@@ -512,11 +519,11 @@ Explicitly label every important claim/statement with ONE of these tags:
             for i, c in enumerate(valid_contents)
         ])
         
-        # HINTS DIPERBARUI HANYA UNTUK 3 SECTION
+        # HINTS DIPERBARUI HANYA UNTUK 3 SECTION (Label Bahasa Indonesia)
         hints = {
-            "EXECUTIVE SUMMARY & CORE THESIS": "Integrasikan Summary, Argumen Kunci, dan Kutipan Ikonik menjadi satu bagian yang kohesif.",
-            "ANALYTICAL FRAMEWORK": "Gabungkan definisi Glosarium dan Blueprint Penalaran (Celah, Metode, Konvergensi) di sini.",
-            "MARKET & INTELLECTUAL POSITIONING": "Fokus pada kompetitor, USP, dan warisan intelektual."
+            "EXECUTIVE SUMMARY & CORE THESIS": "Integrasikan Ringkasan Inti, Tesis Utama & Argumen, dan Kutipan Ikonik menjadi satu bagian yang kohesif.",
+            "ANALYTICAL FRAMEWORK": "Gabungkan Glosarium Terminologi dan Blueprint Penalaran (Celah, Metode, Konvergensi) di sini.",
+            "MARKET & INTELLECTUAL POSITIONING": "Fokus pada Kompetitor Langsung, USP, dan Warisan Intelektual."
         }
         
         hint = hints.get(name, "Harmonisasikan konten untuk bagian ini.")
@@ -1406,3 +1413,349 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                         yield f"data: {json.dumps(stats)}\n\n"
                     except Exception as e2:
                         yield f"data: {json.dumps({'error': f'All synthesis attempts failed. Last error: {str(e2)}'})}\n\n"
+
+    async def summarize_iterative_stream(self, book_metadata: List[Dict], max_iterations: int = 3, target_score: int = 90, critic_model: Optional[str] = None) -> AsyncGenerator[str, None]:
+        """
+        Iterative Self-Correction Mode:
+        Draft -> Critic (Score) -> Refine -> Loop until Target Score or Max Iterations.
+        """
+        if not book_metadata:
+            yield f"data: {json.dumps({'error': 'Empty metadata'})}\n\n"
+            return
+            
+        # 1. Setup & Search
+        m = self._extract_metadata(book_metadata)
+        search_context_str = ""
+        search_results = {}
+        
+        yield f"data: {json.dumps({'status': 'Initializing Iterative Mode...', 'progress': 2})}\n\n"
+        
+        if self.search_aggregator:
+            yield f"data: {json.dumps({'status': 'Searching for high-quality context...', 'progress': 5})}\n\n"
+            try:
+                def evaluation_wrapper(results, book_info):
+                    return self._evaluate_search_relevance(results, book_info)
+                
+                search_results = await anyio.to_thread.run_sync(
+                    self.search_aggregator.search, 
+                    m["title"], m["author"], m.get("genre", ""),
+                    evaluation_wrapper
+                )
+                search_context_str = self.search_aggregator.format_for_prompt(search_results)
+            except Exception as e:
+                print(f"[SEARCH_WARNING] Iterative search failed: {e}")
+
+        # 2. Initial Draft
+        current_draft = ""
+        usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        best_draft = {"content": "", "score": 0, "iteration": 0}
+        
+        yield f"data: {json.dumps({'event': 'draft', 'status': 'Generating Initial Draft...', 'progress': 10})}\n\n"
+        
+        try:
+            # First draft using standard summarize
+            # We don't stream here because we need the full text for the critic
+            res = await anyio.to_thread.run_sync(self.summarize, book_metadata, search_context_str)
+            if "error" in res:
+                yield f"data: {json.dumps({'error': f'Initial draft failed: {res["error"]}'})}\n\n"
+                return
+                
+            current_draft = res.get("content", "")
+            if "usage" in res:
+                for k in usage_total: usage_total[k] += res["usage"][k]
+            
+            # Initialize best draft
+            best_draft = {"content": current_draft, "score": 0, "iteration": 0} # Score unknown yet
+            
+            yield f"data: {json.dumps({'event': 'draft_complete', 'content': current_draft, 'progress': 20})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'Draft generation error: {str(e)}'})}\n\n"
+            return
+
+        # 3. Iteration Loop
+        prev_score = 0
+        stagnation_counter = 0
+        
+        for i in range(max_iterations):
+            iter_num = i + 1
+            yield f"data: {json.dumps({'event': 'critic_start', 'status': f'Critic analyzing Draft {iter_num}...', 'progress': 20 + (i * 20)})}\n\n"
+            
+            # --- CRITIC PHASE ---
+            try:
+                critic_res = await self._evaluate_draft_quality(
+                    m["title"], m["author"], current_draft, 
+                    model_override=critic_model
+                )
+                
+                # Validation & Fallback for Critic
+                score = critic_res.get("score", 0)
+                issues = critic_res.get("issues", [])
+                fixes = critic_res.get("fixes", [])
+                
+                # Update best draft if better
+                if score > best_draft["score"]:
+                    best_draft = {"content": current_draft, "score": score, "iteration": iter_num}
+                
+                # Emit Score Event
+                yield f"data: {json.dumps({
+                    'event': 'score', 
+                    'score': score, 
+                    'issues': issues, 
+                    'fixes': fixes,
+                    'iteration': iter_num
+                })}\n\n"
+                
+                # --- DECISION GATES ---
+                
+                # 1. Target Reached
+                if score >= target_score:
+                    yield f"data: {json.dumps({'event': 'loop_exit', 'reason': 'target_met', 'msg': f'Target score reached ({score})'})}\n\n"
+                    break
+                    
+                # 2. Acceptance Threshold + Minor Issues
+                acceptance_score = target_score - 10 # e.g. 80
+                if score >= acceptance_score and (len(issues) <= 1 or "minor" in str(issues).lower()):
+                    yield f"data: {json.dumps({'event': 'loop_exit', 'reason': 'acceptable', 'msg': 'Acceptable score with minor issues.'})}\n\n"
+                    break
+                    
+                # 3. Stagnation Guard
+                score_delta = score - prev_score
+                if iter_num > 1 and score_delta < 5:
+                    stagnation_counter += 1
+                    if stagnation_counter >= 2:
+                        yield f"data: {json.dumps({'event': 'loop_exit', 'reason': 'stagnation', 'msg': 'Score stagnation detected.'})}\n\n"
+                        break
+                else:
+                    stagnation_counter = 0
+                    
+                prev_score = score
+                
+                # 4. Max Iterations Reached (Check loop end)
+                if i == max_iterations - 1:
+                     yield f"data: {json.dumps({'event': 'loop_exit', 'reason': 'max_iter', 'msg': 'Max iterations reached.'})}\n\n"
+                     break
+                
+                # --- REFINEMENT PHASE ---
+                yield f"data: {json.dumps({'event': 'refine_start', 'status': f'Refining Draft {iter_num}...', 'progress': 25 + (i * 20)})}\n\n"
+                
+                refine_prompt = self._build_refiner_prompt(m["title"], m["author"], current_draft, issues, fixes)
+                
+                # Run refinement
+                # We use a lower temperature for refinement to stick to instructions
+                refine_res = await self._run_completion(refine_prompt, temperature=0.5)
+                
+                if "content" in refine_res:
+                    current_draft = self._clean_output(refine_res["content"])
+                    if "usage" in refine_res:
+                         for k in usage_total: usage_total[k] += refine_res["usage"][k]
+                         
+                    yield f"data: {json.dumps({'event': 'refine_complete', 'content': current_draft})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'error': 'Refinement produced empty content'})}\n\n"
+                    break # Stop if refinement fails
+                    
+            except Exception as e:
+                print(f"[ITERATION_ERROR] {e}")
+                # Use best draft so far
+                yield f"data: {json.dumps({'error': f'Iteration error: {str(e)}. Returning best result.'})}\n\n"
+                break
+
+        # 4. Final Finalization
+        yield f"data: {json.dumps({'status': 'Finalizing...', 'progress': 95})}\n\n"
+        
+        final_content = best_draft["content"]
+        
+        # Normalize format one last time to be sure
+        final_content = self._normalize_output_format(final_content)
+        
+        # Append references
+        refs_markdown = self._generate_references_markdown(search_results if search_results else {})
+        if refs_markdown:
+            final_content += refs_markdown
+            
+        # Yield the final polished content to replace whatever is in the frontend
+        yield f"data: {json.dumps({'event': 'refine_complete', 'content': final_content})}\n\n"
+
+        stats = {
+            'done': True, 'progress': 100,
+            'usage': usage_total,
+            'model': self.model_name,
+            'provider': self.provider,
+            'cost_estimate': self._calculate_cost(usage_total.get('prompt_tokens', 0), usage_total.get('completion_tokens', 0)),
+            'duration_seconds': 0, # Placeholder
+            'is_enhanced': True,
+            'draft_count': iter_num,
+            'final_score': best_draft["score"],
+            'format': 'iterative_refined'
+        }
+        
+        if search_results and search_results.get("search_metadata"):
+             stats["search_metadata"] = search_results["search_metadata"]
+             stats["search_sources"] = {
+                'brave': [{'title': r['title'], 'url': r['url']} for r in search_results.get('brave_results', [])],
+                'wikipedia': {
+                    'title': search_results.get('wikipedia_summary', '')[:100] + '...',
+                    'url': search_results.get('wikipedia_url', '')
+                } if search_results.get('wikipedia_summary') else None
+            }
+            
+        yield f"data: {json.dumps(stats)}\n\n"
+
+
+    async def _evaluate_draft_quality(self, title: str, author: str, draft: str, model_override: Optional[str] = None) -> Dict:
+        """Runs the Critic prompt and parses JSON output."""
+        prompt = self._build_critic_prompt(title, author, draft)
+        
+        # Use a specific client if override is provided, otherwise default
+        # Simple for now: just use standard client but maybe different model name if we supported switching per request
+        # Since `model_override` might require a different client instance (e.g. invalid API key for main client), 
+        # we'll stick to the current client for now unless we implement multi-client management.
+        # But we CAN switch the model parameter if the provider supports it.
+        
+        model_to_use = model_override if model_override and model_override != "same" else self.model_name
+        
+        try:
+            res = await self._run_completion(prompt, model=model_to_use, temperature=0.2, json_mode=True)
+            content = res.get("content", "{}")
+            
+            # Clean JSON markdown blocks if present
+            if "```json" in content:
+                content = content.replace("```json", "").replace("```", "")
+            
+            data = json.loads(content)
+            return data
+        except Exception as e:
+            print(f"[CRITIC_FAIL] {e}")
+            return {"score": 0, "issues": ["Critic failed to parse"], "fixes": []}
+
+    async def _run_completion(self, prompt: str, model: str = None, temperature: float = 0.7, json_mode: bool = False) -> Dict:
+        """Helper for async completion"""
+        model = model or self.model_name
+        start = time.time()
+        
+        if self.provider == "Ollama":
+             # We can't easily use model_override with Ollama properly without verifying it exists, 
+             # so we ignore override for Ollama or assume user knows what they are doing.
+             # JSON mode for Ollama is supported via format="json"
+             try:
+                 req_json = {"model": model, "prompt": prompt, "stream": False, "options": {"temperature": temperature}}
+                 if json_mode: req_json["format"] = "json"
+                 
+                 r = await anyio.to_thread.run_sync(
+                     lambda: requests.post(f"{self.base_url}/api/generate", json=req_json, timeout=self.timeout)
+                 )
+                 if r.status_code != 200: return {"error": r.text}
+                 d = r.json()
+                 return {
+                     "content": d.get("response", ""),
+                     "usage": {"prompt_tokens": d.get("prompt_eval_count", 0), "completion_tokens": d.get("eval_count", 0), "total_tokens": d.get("prompt_eval_count", 0) + d.get("eval_count", 0)}
+                 }
+             except Exception as e: return {"error": str(e)}
+        else:
+             if not self.client: return {"error": "No client"}
+             
+             def call_api():
+                 with self._client_lock:
+                     params = {
+                         "model": model,
+                         "messages": [{"role": "user", "content": prompt}],
+                         "temperature": temperature
+                     }
+                     if json_mode and "gemini" not in model.lower(): # Gemini via OpenAI compat sometimes dislikes this param
+                         params["response_format"] = {"type": "json_object"}
+                         
+                     return self.client.chat.completions.create(**params)
+             
+             c = await anyio.to_thread.run_sync(call_api)
+             u = c.usage
+             return {
+                 "content": c.choices[0].message.content,
+                 "usage": {"prompt_tokens": u.prompt_tokens, "completion_tokens": u.completion_tokens, "total_tokens": u.total_tokens}
+             }
+
+    def _build_critic_prompt(self, title: str, author: str, draft: str) -> str:
+        return f"""<role>SENIOR EDITOR & QUALITY CRITIC</role>
+<context>Book: "{title}" by {author}</context>
+<task>Evaluate the following summary draft STRICTLY based on Academic Standards.</task>
+<draft>
+{draft[:8000]}
+</draft>
+
+<scoring_criteria>
+Evaluate the text with strict, zero-tolerance standards.
+
+1. **Density & Precision**
+   - Language must be highly condensed.
+   - No filler, redundancy, rhetorical padding, or vague phrasing.
+   - Every sentence must carry analytical value.
+
+2. **Structure Compliance**
+   - The summary must STRICTLY follow this structure:
+{self.CORE_STRUCTURE_PROMPT}
+   - Headers (##) MUST be in English.
+   - Internal labels MUST be in Indonesian as defined.
+   - Body content MUST be in Indonesian.
+
+3. **Reasoning Rigor**
+   - The "ANALYTICAL FRAMEWORK" section MUST explicitly and separately define:
+     - **Gap**: What is missing, unresolved, or insufficient in existing discourse.
+     - **Methodology**: The analytical approach used to address that gap.
+   - Implicit, vague, or merged explanations are insufficient.
+
+4. **Localization & Language Discipline**
+   - All body content must be written in formal, academic Indonesian.
+   - English headers are mandatory and NOT a violation.
+   - Common professional English technical terms (e.g., "core thesis", "market positioning") are allowed and should NOT be penalized.
+
+5. **Tagging Accuracy**
+   - [Analisis Terintegrasi] tags must be used consistently and correctly.
+   - Incorrect placement, misuse, or omission counts as a structural defect.
+</scoring_criteria>
+
+<calibration>
+- Score < 70  : Fundamental structural or linguistic violations.
+- Score 70–85 : Substantively sound but lacks sharpness, precision, or analytical force.
+- Score 86–90 : Excellent execution with minor, non-structural weaknesses.
+- Score > 90  : Extremely rare. Structurally perfect, linguistically precise, and analytically rigorous.
+</calibration>
+
+<output_schema>
+JSON ONLY:
+{{
+  "score": int,
+  "issues": ["Critical Issue 1", "Critical Issue 2", "Max 3 issues"],
+  "fixes": ["Specific instruction to fix Issue 1", "Specific instruction to fix Issue 2"]
+}}
+</output_schema>"""
+
+    def _build_refiner_prompt(self, title: str, author: str, draft: str, issues: List[str], fixes: List[str]) -> str:
+        issues_str = "\n".join([f"- {i}" for i in issues])
+        fixes_str = "\n".join([f"- {f}" for f in fixes])
+        
+        return f"""<role>EXPERT REWRITER</role>
+<context>Book: "{title}" by {author}</context>
+<task>Refine the draft to address specific critique.</task>
+
+<critique>
+ISSUES:
+{issues_str}
+
+REQUIRED FIXES:
+{fixes_str}
+</critique>
+
+<draft_content>
+{draft}
+</draft_content>
+
+<instructions>
+1. **SCOPE LOCK**: ONLY modify sections related to the issues. Do NOT rewrite parts that are already correct.
+2. **Language & Structure**: 
+{self.CORE_STRUCTURE_PROMPT}
+   - Headers MUST remain in **English** (as shown above).
+   - Body text MUST be in **Formal Indonesian**.
+   - Use the Indonesian labels (Ringkasan Inti, Glosarium Terminologi, etc.) for internal points.
+3. **Keep the 3-Section format intact**.
+4. **Output**: Return the FULL corrected text.
+</instructions>"""

@@ -139,6 +139,10 @@ class SummarizationRequest(BaseModel):
     partial_content: Optional[str] = None
     enhance_quality: Optional[bool] = False
     draft_count: Optional[int] = 3
+    iterative_mode: Optional[bool] = False
+    critic_model: Optional[str] = None
+    max_iterations: Optional[int] = 3
+    target_score: Optional[int] = 90
     
 class SynthesisRequest(BaseModel):
     summary_ids: List[str]
@@ -180,6 +184,17 @@ async def summarize_book(req: SummarizationRequest):
     if req.enhance_quality:
         return StreamingResponse(
             summarizer.summarize_tournament_stream(req.metadata, n=req.draft_count or 3),
+            media_type="text/event-stream"
+        )
+
+    if req.iterative_mode:
+        return StreamingResponse(
+            summarizer.summarize_iterative_stream(
+                req.metadata, 
+                max_iterations=req.max_iterations or 3,
+                target_score=req.target_score or 90,
+                critic_model=req.critic_model
+            ),
             media_type="text/event-stream"
         )
 
