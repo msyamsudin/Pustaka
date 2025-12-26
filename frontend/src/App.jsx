@@ -1793,12 +1793,6 @@ function App() {
             <h1 style={{ margin: '0' }}>
               <span className="title-gradient">Pustaka+</span>
             </h1>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '500', marginTop: '0.25rem', letterSpacing: '1px' }}>
-              Advanced Synthetic Analytical Briefing
-            </p>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.7, marginTop: '0.25rem', fontStyle: 'italic', maxWidth: '400px', margin: '0.5rem auto' }}>
-              Deep-tier knowledge synthesis engine for high-stakes intelligence.
-            </p>
           </div>
         </header>
 
@@ -2156,19 +2150,24 @@ function App() {
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                     Max Search Results
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={searchMaxResults}
-                    onChange={(e) => {
-                      const val = Math.max(1, Math.min(10, parseInt(e.target.value) || 5));
-                      setSearchMaxResults(val);
-                      saveConfig({ search_max_results: val });
-                    }}
-                    className="input-field"
-                    style={{ marginBottom: 0, width: '100px' }}
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={searchMaxResults}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setSearchMaxResults(val);
+                        saveConfig({ search_max_results: val });
+                      }}
+                      className="custom-range"
+                      style={{ flex: 1 }}
+                    />
+                    <span style={{ fontSize: '0.9rem', fontWeight: 'bold', minWidth: '24px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                      {searchMaxResults}
+                    </span>
+                  </div>
                   <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                     Jumlah hasil pencarian (1-10)
                   </p>
@@ -2557,7 +2556,7 @@ function App() {
                           cursor: 'pointer'
                         }} onClick={() => setHighQuality(!highQuality)}>
                           <div className={`toggle-switch ${highQuality ? 'active' : ''}`} style={{
-                            width: '36px', height: '18px', background: highQuality ? 'var(--accent-color)' : '#333',
+                            width: '36px', height: '18px', background: highQuality ? 'var(--success)' : '#333',
                             borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
                           }}>
                             <div style={{
@@ -2586,7 +2585,7 @@ function App() {
                           saveConfig({ enable_search_enrichment: newValue });
                         }}>
                           <div className={`toggle-switch ${enableSearchEnrichment ? 'active' : ''}`} style={{
-                            width: '36px', height: '18px', background: enableSearchEnrichment ? 'var(--accent-color)' : '#333',
+                            width: '36px', height: '18px', background: enableSearchEnrichment ? 'var(--success)' : '#333',
                             borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
                           }}>
                             <div style={{
@@ -2622,11 +2621,10 @@ function App() {
                             max="10"
                             value={draftCount}
                             onChange={(e) => setDraftCount(parseInt(e.target.value))}
+                            className="custom-range"
                             style={{
                               width: '100%',
-                              accentColor: 'var(--accent-color)',
-                              cursor: 'pointer',
-                              height: '4px'
+                              marginTop: '0.5rem'
                             }}
                           />
                         </div>

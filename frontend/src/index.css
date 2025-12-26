@@ -780,6 +780,53 @@ option {
   max-width: 400px;
 }
 
+
+/* Custom Range Slider */
+.custom-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.custom-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease-out;
+  border: 2px solid var(--card-bg); /* Contrast border */
+}
+
+/* Active State */
+.custom-range:active::-webkit-slider-thumb {
+  background: var(--success); /* Green when active */
+  transform: scale(1.2);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2);
+}
+
+.custom-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease-in-out;
+}
+
+.custom-range:active::-moz-range-thumb {
+  background: var(--success);
+}
+
 /* Mobile Responsiveness */
 @media (max-width: 768px) {
   .container {
