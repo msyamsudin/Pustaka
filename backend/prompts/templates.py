@@ -7,7 +7,6 @@ CORE_STRUCTURE_PROMPT = """
 
 ## 1. EXECUTIVE SUMMARY & CORE THESIS
 
-**Ringkasan Inti**:
 [TULIS SATU PARAGRAF UTUH: 100–150 kata]
 [TIDAK BOLEH: bullet points, kalimat terputus, tone promosi]
 [HARUS MENCAKUP: problem statement, core claim, conditional scope/boundary]

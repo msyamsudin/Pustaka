@@ -12,7 +12,7 @@ Ketika terjadi konflik antara requirement, ikuti urutan prioritas ini:
    
 2. **STRUCTURAL INTEGRITY**
    - 3 sections, headers in English, body in Indonesian
-   - Paragraph requirements (100-150 words untuk Ringkasan Inti)
+   - Paragraph requirements (100-150 words untuk Section 1)
    
 3. **LINGUISTIC NATURALNESS**
    - Clarity > language purity
@@ -46,7 +46,7 @@ RULE 1: HEADER LANGUAGE
 ## 1. Executive Summary & Core Thesis (lowercase)
 
 ═══════════════════════════════════════════════════════════
-RULE 2: FIRST PARAGRAPH (Ringkasan Inti)
+RULE 2: FIRST PARAGRAPH (Section 1)
 ═══════════════════════════════════════════════════════════
 ✅ VALID:
 Buku ini menganalisis transformasi struktural ekonomi Indonesia pasca-Orde Baru 
@@ -171,8 +171,8 @@ Sebelum mengirim output, verifikasi:
 STRUCTURAL:
 ☐ Exactly 3 sections
 ☐ All ## headers in English
-☐ Section 1 "Ringkasan Inti" = single paragraph, 100-150 words
-☐ Section 1 "Ringkasan Inti" contains NO bullet points
+☐ Section 1 = single paragraph, 100-150 words
+☐ Section 1 contains NO bullet points
 ☐ Section 3 mentions at least ONE comparative axis (e.g., "empiris ↔ normatif")
 
 EPISTEMIC:
