@@ -13,6 +13,7 @@ from summarizer import BookSummarizer
 from config_manager import ConfigManager
 from storage_manager import StorageManager
 from notion_manager import NotionManager
+import summarizer_utils
 
 load_dotenv()
 
@@ -76,6 +77,10 @@ class NotionShareRequest(BaseModel):
 @app.get("/")
 def read_root():
     return {"message": "Pustaka+ Backend is Running"}
+
+@app.get("/api/status")
+def get_status():
+    return {"status": "ok", "message": "Pustaka+ API is online"}
 
 @app.get("/api/config")
 def get_config():
@@ -165,7 +170,7 @@ async def summarize_book(req: SummarizationRequest):
     config = config_manager.load_config()
     
     provider = req.provider or config.get("provider", "OpenRouter")
-    api_key = req.api_key or (config.get("openrouter_key") if provider == "OpenRouter" else config.get("groq_key"))
+    api_key = (req.api_key or (config.get("openrouter_key") if provider == "OpenRouter" else config.get("groq_key")) or "").strip()
     model = req.model or (config.get("openrouter_model") if provider == "OpenRouter" else config.get("groq_model"))
     base_url = req.base_url or config.get("ollama_base_url")
 
@@ -258,34 +263,43 @@ async def synthesize_summaries(req: SynthesisRequest):
     # API Configuration
     config = config_manager.load_config()
     provider = req.provider or config.get("provider", "OpenRouter")
-    api_key = (config.get("openrouter_key") if provider == "OpenRouter" else config.get("groq_key"))
+    key = config.get("openrouter_key") if provider == "OpenRouter" else config.get("groq_key")
+    api_key = (key or "").strip()
     model = req.model or (config.get("openrouter_model") if provider == "OpenRouter" else config.get("groq_model"))
     base_url = config.get("ollama_base_url")
 
     summarizer = BookSummarizer(api_key=api_key, model_name=model, provider=provider, base_url=base_url, search_config=config)
     
     # Calculate diversity analysis before synthesis
-    diversity_analysis = summarizer._calculate_draft_diversity(drafts)
+    diversity_analysis = summarizer_utils.calculate_draft_diversity(drafts)
     
     # Perform streaming synthesis
     
     async def event_generator():
-        async for update in summarizer.summarize_synthesize(title, author, genre, year, drafts, diversity_analysis=diversity_analysis):
-            if "error" in update:
-                yield f"data: {json.dumps(update)}\n\n"
-                break
-            
-            # Prepare data to yield
-            yield_data = {**update}
-            
-            # If this is the final chunk with done flag, add additional metadata
-            if "done" in yield_data and yield_data["done"]:
-                yield_data["source_models"] = source_models
-                yield_data["source_summary_ids"] = req.summary_ids
-                yield_data["source_draft_count"] = len(drafts)
-                yield_data["diversity_analysis"] = diversity_analysis
-            
-            yield f"data: {json.dumps(yield_data)}\n\n"
+        try:
+            print(f"[SYNTHESIS_STREAM] Starting stream for {len(drafts)} drafts...")
+            async for update in summarizer.summarize_synthesize(title, author, genre, year, drafts, diversity_analysis=diversity_analysis):
+                if "error" in update:
+                    print(f"[SYNTHESIS_STREAM_ERROR] {update['error']}")
+                    yield f"data: {json.dumps(update)}\n\n"
+                    break
+                
+                # Prepare data to yield
+                yield_data = {**update}
+                
+                # If this is the final chunk with done flag, add additional metadata
+                if "done" in yield_data and yield_data["done"]:
+                    yield_data["source_models"] = source_models
+                    yield_data["source_summary_ids"] = req.summary_ids
+                    yield_data["source_draft_count"] = len(drafts)
+                    yield_data["diversity_analysis"] = diversity_analysis
+                
+                yield f"data: {json.dumps(yield_data)}\n\n"
+        except Exception as e:
+            print(f"[SYNTHESIS_CRASH] Critical error in generator: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'error': f'Server Crash: {str(e)}'})}\n\n"
             
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -317,7 +331,7 @@ def elaborate_text(req: ElaborationRequest):
 @app.post("/api/models")
 def list_models(req: Dict):
     provider = req.get("provider", "OpenRouter")
-    api_key = req.get("api_key")
+    api_key = (req.get("api_key") or "").strip()
     base_url = req.get("base_url")
 
     if provider == "OpenRouter":
@@ -338,11 +352,14 @@ def list_models(req: Dict):
             model_ids.sort()
             return {"valid": True, "models": model_ids}
         except Exception as e:
+            print(f"OpenRouter Model List Error: {str(e)}")
             raise HTTPException(status_code=401, detail=f"OpenRouter Error: {str(e)}")
     
     elif provider == "Groq":
         if not api_key:
              raise HTTPException(status_code=400, detail="Groq API Key is required")
+        
+        api_key = api_key.strip() # Ensure Groq key is also trimmed
         try:
             from openai import OpenAI
             client = OpenAI(
@@ -354,6 +371,7 @@ def list_models(req: Dict):
             model_ids.sort()
             return {"valid": True, "models": model_ids}
         except Exception as e:
+            print(f"Groq Model List Error: {str(e)}")
             raise HTTPException(status_code=401, detail=f"Groq Error: {str(e)}")
     
     elif provider == "Ollama":

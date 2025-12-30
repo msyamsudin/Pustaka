@@ -290,10 +290,19 @@ class SearchAggregator:
             phase = search_phases[current_iteration]
             results["search_metadata"]["iterations"] += 1
             
-            # Construct Query
+            # Construct Query - SIMPLIFIED to avoid 422 errors
             base_query = f'"{title}" {author}'
-            exclusion_query = " ".join([f"-site:{domain}" for domain in EXCLUDED_DOMAINS])
-            brave_query = f"{base_query} {phase['relevance_term']} {exclusion_query}"
+            
+            # Simplify exclusion - only exclude most problematic domains
+            critical_excludes = ["gramedia.com", "tokopedia.com", "shopee.co.id", "goodreads.com"]
+            exclusion_query = " ".join([f"-site:{domain}" for domain in critical_excludes])
+            
+            # Simplified relevance term - avoid complex boolean operators that cause 422
+            simple_relevance = "review OR analysis OR summary"
+            
+            brave_query = f"{base_query} {simple_relevance} {exclusion_query}"
+            
+            print(f"[SEARCH_DEBUG] Iteration {current_iteration + 1} query: {brave_query[:100]}...")
             
             # Perform Search
             if self.brave_client and self.brave_client.api_key:
@@ -301,7 +310,14 @@ class SearchAggregator:
                 results["search_metadata"]["queries_used"] += 1
                 
                 if "error" in brave_res:
-                    results["search_metadata"]["errors"].append(f"Brave (Iter {current_iteration+1}): {brave_res['error']}")
+                    error_msg = f"Brave (Iter {current_iteration+1}): {brave_res['error']}"
+                    results["search_metadata"]["errors"].append(error_msg)
+                    print(f"[SEARCH_ERROR] {error_msg}")
+                    
+                    # If rate limit or auth error, stop trying
+                    if "Rate limit" in brave_res['error'] or "Invalid" in brave_res['error']:
+                        print(f"[SEARCH_ERROR] Critical error, stopping search iterations")
+                        break
                 else:
                     new_results = []
                     for r in brave_res.get("results", []):
