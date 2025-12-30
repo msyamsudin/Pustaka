@@ -2,14 +2,15 @@
 Aplikasi yang berfungsi untuk mensintesis beragam konsep kunci hingga nilai aplikatif menggunakan bantuan AI.
 
 ## Fitur Utama
-- **Analytical Briefing Engine**: Menghasilkan analisis mendalam dengan struktur **10-bagian** yang komprehensif (seperti *Conceptual Architecture*, *Implementation Roadmap*, hingga *Critical Evaluation*), memberikan kedalaman materi yang lebih baik.
-- **Section-by-Section Synthesis**: Metode yang memproses setiap bagian draf secara independen, menggabungkan wawasan terbaik dari berbagai draf, menormalisasi terminologi (Indonesia/Inggris), dan memiliki mekanisme pemulihan otomatis jika terjadi kegagalan.
-- **Book Verification**: Memverifikasi keberadaan buku melalui Google Books & OpenLibrary untuk mencegah halusinasi AI.
+- **Analytical Briefing Engine**: Menghasilkan analisis mendalam dengan struktur **3-bagian utama** (*Executive Summary & Core Thesis*, *Analytical Framework*, dan *Market & Intellectual Positioning*) yang fokus pada logika argumen dan posisi intelektual karya.
+- **Section-by-Section Synthesis**: Sebuah proses yang menggabungkan berbagai versi rangkuman dengan membedah tiap bagian secara independen untuk menjaga detail data dan struktur hasil akhir.
+- **Iterative Self-Correction**: Mekanisme audit otomatis di mana AI bertindak sebagai kritikus untuk mengevaluasi draf, kemudian melakukan revisi mandiri hingga mencapai target kualitas yang ditentukan.
+- **Enhanced Verification & Search**: Verifikasi data buku via Google Books & OpenLibrary, serta fitur *Search Enrichment* (Brave Search Engine & Wikipedia).
+- **Multi-Version Library**: Simpan berbagai versi rangkuman untuk satu buku (misal: perbandingan antar model AI) dan kelola dalam *Saved Library*.
+- **Multiple AI Providers**: Dukungan untuk **OpenRouter**, **Groq**, dan **Ollama** (Lokal).
 - **Analytical Refining Mode**: Menghasilkan draf ringkasan awal secara paralel (level kedalaman 1-10 via **Draft Depth slider**) lalu melakukan tahap pemurnian (*refining*).
 - **Smart Resume**: Kemampuan melanjutkan proses perangkuman yang terputus tanpa harus mengulang dari awal.
-- **Library Management**: Simpan, kelola, dan baca kembali hasil analisis buku Anda kapan saja dalam antarmuka *Saved Library* yang elegan.
-- **Multiple AI Providers**: Dukungan untuk **OpenRouter** (Cloud), **Groq** (Ultra-fast Cloud), dan **Ollama** (Lokal/Offline Privacy).
-- **Tanya AI**: Tanya AI tentang konsep kunci, analisis kontekstual, atau applied value dari hasil rangkuman. Kemudian simpan sebagai catatan.
+- **Tanya AI & Notes**: Interaksi tanya-jawab kontekstual dengan hasil rangkuman, serta fitur pencatatan (*Note Taking*) yang terintegrasi.
 
 ## Instalasi
 
