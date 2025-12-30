@@ -1834,57 +1834,86 @@ function App() {
                 flexWrap: 'wrap',
                 gap: '1rem'
               }}>
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                    Provider: {usageStats?.provider || provider}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className="badge" style={{
+                    background: 'rgba(30, 41, 59, 0.5)',
+                    color: '#38bdf8',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                    fontSize: '0.75rem',
+                    padding: '0.15rem 0.6rem'
+                  }}>
+                    {usageStats?.provider || provider}
                   </span>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                    Model: {(usageStats?.model || (provider === 'OpenRouter' ? openRouterModel : ollamaModel)).split('/').pop()}
+                  <span style={{ opacity: 0.2 }}>•</span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>
+                    {(usageStats?.model || (provider === 'OpenRouter' ? openRouterModel : provider === 'Groq' ? groqModel : ollamaModel)).split('/').pop()}
                   </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                   {usageStats?.cost_estimate && (
-                    <span className="badge" style={{
-                      background: usageStats.cost_estimate.is_free ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.05)',
-                      color: usageStats.cost_estimate.is_free ? 'var(--success)' : 'inherit',
-                      border: usageStats.cost_estimate.is_free ? '1px solid rgba(34, 197, 94, 0.2)' : 'none'
-                    }}>
-                      Biaya: {usageStats.cost_estimate.is_free ? "GRATIS" :
-                        usageStats.cost_estimate.total_idr
-                          ? `Rp ${usageStats.cost_estimate.total_idr.toLocaleString('id-ID')}($${usageStats.cost_estimate.total_usd})`
-                          : (usageStats.cost_estimate.total_usd !== null ? `$${usageStats.cost_estimate.total_usd}` : "Estimasi N/A")
-                      }
-                    </span>
-                  )}
-                  {usageStats?.duration_seconds > 0 && (
-                    <span className="badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                      Waktu: {usageStats.duration_seconds}s
-                    </span>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <span style={{ opacity: 0.6 }}>Biaya: </span>
+                      <b style={{ color: 'var(--text-primary)' }}>
+                        {usageStats.cost_estimate.is_free ? "GRATIS" :
+                          usageStats.cost_estimate.total_idr
+                            ? `Rp${usageStats.cost_estimate.total_idr.toLocaleString('id-ID')}`
+                            : (usageStats.cost_estimate.total_usd !== null ? `$${usageStats.cost_estimate.total_usd}` : "N/A")
+                        }
+                      </b>
+                    </div>
                   )}
                   {usageStats?.tokens && (
-                    <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}>
-                      Token: {usageStats.tokens.total_tokens}
-                    </span>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <span style={{ opacity: 0.6 }}>Token: </span>
+                      <b style={{ color: 'var(--text-primary)' }}>{usageStats.tokens.total_tokens.toLocaleString()}</b>
+                    </div>
+                  )}
+                  {usageStats?.duration_seconds > 0 && (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <span style={{ opacity: 0.6 }}>Waktu: </span>
+                      <b style={{ color: 'var(--text-primary)' }}>{usageStats.duration_seconds}s</b>
+                    </div>
                   )}
                   {usageStats?.is_enhanced && (
-                    <span className="badge" style={{ background: 'rgba(212, 175, 55, 0.1)', color: '#d4af37', border: '1px solid rgba(212, 175, 55, 0.3)' }}>
-                      <Sparkles size={12} style={{ marginRight: '4px' }} />
-                      {usageStats.format === 'iterative_refined'
-                        ? `Iterative Mode (${usageStats.draft_count} Iterations)`
-                        : `Refining Mode (${usageStats.draft_count} Drafts)`
-                      }
+                    <span className="badge" style={{
+                      background: 'rgba(212, 175, 55, 0.08)',
+                      color: '#d4af37',
+                      border: '1px solid rgba(212, 175, 55, 0.15)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '0.2rem 0.6rem',
+                      borderRadius: '8px'
+                    }}>
+                      <Sparkles size={12} style={{ color: '#d4af37' }} />
+                      <span style={{ fontSize: '0.75rem', fontWeight: '600' }}>
+                        {usageStats.format === 'iterative_refined' ? 'Iterative Mode' : 'Refining Mode'}
+                      </span>
+                      <span style={{
+                        background: 'rgba(212, 175, 55, 0.2)',
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '6px',
+                        fontSize: '0.7rem',
+                        fontWeight: '800',
+                        color: '#fff'
+                      }}>
+                        {usageStats.draft_count}
+                      </span>
                     </span>
                   )}
                   {usageStats?.is_synthesis && (
                     <span className="badge"
-                      style={{ background: 'rgba(147, 51, 234, 0.1)', color: '#9333ea', border: '1px solid rgba(147, 51, 234, 0.3)' }}
+                      style={{ background: 'rgba(147, 51, 234, 0.08)', color: '#9333ea', border: '1px solid rgba(147, 51, 234, 0.15)', display: 'flex', alignItems: 'center', gap: '4px' }}
                       title={usageStats.source_models?.length > 0 ? `Gabungan dari: ${usageStats.source_models.map(m => m.split('/').pop()).join(', ')}` : "Hasil Sintesis"}
                     >
-                      <Sparkles size={12} style={{ marginRight: '4px' }} />
-                      Hasil Sintesis ({usageStats.source_count} Varian: {usageStats.source_models?.map(m => m.split('/').pop()).join(', ')})
+                      <Sparkles size={12} />
+                      Synthesis ({usageStats.source_count})
                     </span>
                   )}
                   {usageStats?.search_enriched && (
-                    <span className="badge" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-                      <Search size={12} style={{ marginRight: '4px' }} /> Search Enriched
+                    <span className="badge" style={{ background: 'rgba(56, 189, 248, 0.08)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Search size={12} /> Search
                     </span>
                   )}
                 </div>
