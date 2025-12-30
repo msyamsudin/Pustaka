@@ -24,6 +24,7 @@ export const useLibraryManagement = () => {
     const [metadataAuthor, setMetadataAuthor] = useState("");
     const [metadataIsbn, setMetadataIsbn] = useState("");
     const [metadataGenre, setMetadataGenre] = useState("");
+    const [metadataPublishedDate, setMetadataPublishedDate] = useState("");
     const [isSavingMetadata, setIsSavingMetadata] = useState(false);
 
     // Delete Confirmation
@@ -155,6 +156,8 @@ export const useLibraryManagement = () => {
         setMetadataIsbn,
         metadataGenre,
         setMetadataGenre,
+        metadataPublishedDate,
+        setMetadataPublishedDate,
         isSavingMetadata,
         setIsSavingMetadata,
 

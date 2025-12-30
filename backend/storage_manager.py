@@ -222,7 +222,7 @@ class StorageManager:
                 return local_path
         return None
 
-    def update_book_metadata(self, book_id: str, title: str, author: str, isbn: str, genre: str = None) -> Optional[Dict]:
+    def update_book_metadata(self, book_id: str, title: str, author: str, isbn: str, genre: str = None, publishedDate: str = None) -> Optional[Dict]:
         """Updates basic metadata for a book."""
         data = self._load_data()
         book = next((b for b in data if b['id'] == book_id), None)
@@ -235,6 +235,8 @@ class StorageManager:
         book['isbn'] = isbn
         if genre is not None:
             book['genre'] = genre
+        if publishedDate is not None:
+            book['publishedDate'] = publishedDate
         book['last_updated'] = datetime.now().isoformat()
         
         self._save_data(data)

@@ -67,6 +67,7 @@ class MetadataUpdateRequest(BaseModel):
     author: str
     isbn: str
     genre: Optional[str] = None
+    publishedDate: Optional[str] = None
 
 class NotionShareRequest(BaseModel):
     title: str
@@ -507,7 +508,7 @@ def update_book_cover(book_id: str, request: CoverUpdateRequest):
 
 @app.put("/api/books/{book_id}/metadata")
 def update_book_metadata(book_id: str, request: MetadataUpdateRequest):
-    updated_book = storage_manager.update_book_metadata(book_id, request.title, request.author, request.isbn, request.genre)
+    updated_book = storage_manager.update_book_metadata(book_id, request.title, request.author, request.isbn, request.genre, request.publishedDate)
     if not updated_book:
         raise HTTPException(status_code=404, detail="Book not found")
     return updated_book

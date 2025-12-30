@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus, MessageSquarePlus, Share2, Globe, ExternalLink } from 'lucide-react';
+import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus, MessageSquarePlus, Share2, Globe, ExternalLink, Calendar } from 'lucide-react';
 
 // Service Imports
 import * as api from './services/api';
@@ -97,6 +97,7 @@ function App() {
     isMetadataModalOpen, setIsMetadataModalOpen, metadataEditBook, setMetadataEditBook,
     metadataTitle, setMetadataTitle, metadataAuthor, setMetadataAuthor,
     metadataIsbn, setMetadataIsbn, metadataGenre, setMetadataGenre,
+    metadataPublishedDate, setMetadataPublishedDate,
     isSavingMetadata, setIsSavingMetadata,
     deleteConfirmOpen, setDeleteConfirmOpen, bookToDelete, setBookToDelete,
     isNotionSharing, setIsNotionSharing,
@@ -361,6 +362,7 @@ function App() {
         metadata: {
           isbn: isbn,
           genre: currentBook?.genre || (verificationResult.sources.find(s => s.genre)?.genre || ""),
+          publishedDate: currentBook?.publishedDate || (verificationResult.sources.find(s => s.publishedDate)?.publishedDate || ""),
           sources: verificationResult.sources,
           image_url: imageUrl
         }
@@ -437,6 +439,7 @@ function App() {
       title: book.title,
       author: book.author,
       genre: book.genre || "",
+      publishedDate: book.publishedDate || "",
       image_url: book.image_url || "",
       description: "Data dimuat dari perpustakaan lokal."
     };
@@ -992,30 +995,46 @@ function App() {
 
   const handleUpdateMetadata = async () => {
     if (!metadataEditBook) return;
-    setIsSavingMetadata(true);
 
+    setIsSavingMetadata(true);
     try {
-      const response = await api.updateMetadata(metadataEditBook.id, {
+      await api.updateMetadata(metadataEditBook.id, {
         title: metadataTitle,
         author: metadataAuthor,
         isbn: metadataIsbn,
-        genre: metadataGenre
+        genre: metadataGenre,
+        publishedDate: metadataPublishedDate
       });
 
-      // Update local state
-      const updatedBook = response.data;
-      setSavedSummaries(prev => prev.map(book => book.id === updatedBook.id ? updatedBook : book));
+      // Reload library to reflect changes
+      const updatedLibrary = await loadLibrary();
 
-      // Update current book if it's the one we're looking at
-      if (currentBook && currentBook.id === updatedBook.id) {
-        setCurrentBook(updatedBook);
+      // Update current book if it's the one we just edited
+      if (currentBook && currentBook.id === metadataEditBook.id) {
+        const updatedBook = updatedLibrary.find(b => b.id === currentBook.id);
+        if (updatedBook) {
+          setCurrentBook(updatedBook);
+          // Also update existing verification result if present
+          if (verificationResult) {
+            setVerificationResult(prev => ({
+              ...prev,
+              sources: prev.sources.map(s => ({
+                ...s,
+                title: metadataTitle,
+                author: metadataAuthor,
+                genre: metadataGenre,
+                publishedDate: metadataPublishedDate
+              }))
+            }));
+          }
+        }
       }
 
-      showToast("Info buku berhasil diperbarui");
       setIsMetadataModalOpen(false);
+      showToast("Info buku diperbarui", "success");
     } catch (err) {
-      console.error("Failed to update metadata:", err);
-      showAlert("Gagal", "Gagal memperbarui info buku.");
+      console.error("Failed to update metadata", err);
+      showAlert("Error", "Gagal memperbarui info buku.");
     } finally {
       setIsSavingMetadata(false);
     }
@@ -1252,6 +1271,7 @@ function App() {
             setMetadataAuthor(book.author);
             setMetadataIsbn(book.isbn || "");
             setMetadataGenre(book.genre || "");
+            setMetadataPublishedDate(book.publishedDate || "");
             setIsMetadataModalOpen(true);
           }}
           API_BASE_URL={API_BASE_URL}
@@ -1523,6 +1543,22 @@ function App() {
                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {currentBook ? currentBook.author : (verificationResult?.sources[0]?.author || author)}
                       </span>
+                      {((currentBook && currentBook.publishedDate) || (verificationResult?.sources?.find(s => s.publishedDate)?.publishedDate)) && !isStuck && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '0.15rem 0.6rem',
+                          background: 'rgba(255,255,255,0.05)',
+                          borderRadius: '12px',
+                          fontSize: '0.7rem',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid rgba(255,255,255,0.1)'
+                        }}>
+                          <Calendar size={10} />
+                          {String(currentBook ? currentBook.publishedDate : (verificationResult?.sources?.find(s => s.publishedDate)?.publishedDate || "")).substring(0, 4)}
+                        </div>
+                      )}
                       {((currentBook && currentBook.genre) || (verificationResult?.sources?.find(s => s.genre)?.genre)) && !isStuck && (
                         <div style={{
                           display: 'flex',
@@ -2141,7 +2177,7 @@ function App() {
         onClose={() => setIsCoverModalOpen(false)}
         onSave={(url) => handleUpdateCover(coverEditBook.id, url)}
         apiBaseUrl={API_BASE_URL}
-      />
+      />{/* MISSING FUNCTION DEFINITION HERE */}
 
       <MetadataEditModal
         isOpen={isMetadataModalOpen}
@@ -2150,10 +2186,12 @@ function App() {
         author={metadataAuthor}
         isbn={metadataIsbn}
         genre={metadataGenre}
+        publishedDate={metadataPublishedDate}
         setTitle={setMetadataTitle}
         setAuthor={setMetadataAuthor}
         setIsbn={setMetadataIsbn}
         setGenre={setMetadataGenre}
+        setPublishedDate={setMetadataPublishedDate}
         onSave={handleUpdateMetadata}
         onClose={() => setIsMetadataModalOpen(false)}
         isSaving={isSavingMetadata}

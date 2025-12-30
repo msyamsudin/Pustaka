@@ -78,7 +78,7 @@ class BookVerifier:
                         "title": book_info.get("title"),
                         "authors": book_info.get("author_name", []),
                         "isbn": book_info.get("isbn", [""])[0], # Just take first
-                        "publishedDate": book_info.get("first_publish_year"),
+                        "publishedDate": str(book_info.get("first_publish_year")) if book_info.get("first_publish_year") else "",
                         "genre": ", ".join(book_info.get("subject", [])[:3]) if book_info.get("subject") else "",
                         "description": "", # Search API rarely gives full desc.
                         "image_url": f"https://covers.openlibrary.org/b/id/{book_info.get('cover_i')}-L.jpg" if book_info.get('cover_i') else ""

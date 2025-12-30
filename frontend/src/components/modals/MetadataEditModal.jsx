@@ -1,6 +1,6 @@
 import React from 'react';
 
-const MetadataEditModal = ({ isOpen, book, title, author, isbn, genre, setTitle, setAuthor, setIsbn, setGenre, onSave, onClose, isSaving }) => {
+const MetadataEditModal = ({ isOpen, book, title, author, isbn, genre, publishedDate, setTitle, setAuthor, setIsbn, setGenre, setPublishedDate, onSave, onClose, isSaving }) => {
     if (!isOpen || !book) return null;
 
     return (
@@ -42,6 +42,16 @@ const MetadataEditModal = ({ isOpen, book, title, author, isbn, genre, setTitle,
                         value={genre}
                         onChange={(e) => setGenre(e.target.value)}
                         placeholder="Contoh: Computer Science, Fiction"
+                    />
+                </div>
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Tahun Rilis</label>
+                    <input
+                        type="text"
+                        className="input-field"
+                        value={publishedDate || ""}
+                        onChange={(e) => setPublishedDate(e.target.value)}
+                        placeholder="Contoh: 2008"
                     />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
