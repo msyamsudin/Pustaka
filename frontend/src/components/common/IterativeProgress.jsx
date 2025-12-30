@@ -204,6 +204,74 @@ const IterativeProgress = ({ stats }) => {
                     </div>
                 </div>
             </div>
+
+            {/* Critique Notes Section */}
+            {steps.some(s => s.type === 'critic' && s.issues && s.issues.length > 0) && (
+                <div style={{
+                    padding: '0 1.5rem 1.5rem 1.5rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1rem'
+                }}>
+                    <div style={{
+                        height: '1px',
+                        background: 'linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%)',
+                        width: '100%'
+                    }} />
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#888', letterSpacing: '1px' }}>
+                            CRITIQUE_ARTIFACTS
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {steps
+                                .filter(s => s.type === 'critic' && s.issues && s.issues.length > 0)
+                                .map((step, sIdx) => (
+                                    <div key={sIdx} style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.5rem',
+                                        padding: '0.75rem',
+                                        background: 'rgba(255,255,255,0.02)',
+                                        borderRadius: '6px',
+                                        border: '1px solid rgba(255,255,255,0.03)'
+                                    }}>
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            fontSize: '0.7rem',
+                                            color: 'var(--accent-color)',
+                                            fontWeight: 'bold',
+                                            textTransform: 'uppercase',
+                                            opacity: 0.8
+                                        }}>
+                                            <AlertTriangle size={12} />
+                                            <span>Issues Identified in Cycle {step.iteration} (Score: {step.score}%)</span>
+                                        </div>
+                                        <ul style={{
+                                            margin: 0,
+                                            padding: '0 0 0 1.25rem',
+                                            fontSize: '0.85rem',
+                                            color: '#ccc',
+                                            lineHeight: '1.5',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '0.25rem'
+                                        }}>
+                                            {step.issues.map((issue, iIdx) => (
+                                                <li key={iIdx} style={{ listStyleType: 'disc' }}>
+                                                    {issue}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

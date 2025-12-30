@@ -17,8 +17,11 @@ export const useSummaryGeneration = () => {
     const [progress, setProgress] = useState(0);
     const abortControllerRef = useRef(null);
 
-    // Iterative Mode
+    // Iterative Mode & Versioning
     const [iterativeStats, setIterativeStats] = useState(null);
+    const [versions, setVersions] = useState([]);
+    const [activeVersionIndex, setActiveVersionIndex] = useState(-1);
+    const [showDiff, setShowDiff] = useState(false);
 
     // Search Sources
     const [searchSources, setSearchSources] = useState(null);
@@ -44,6 +47,8 @@ export const useSummaryGeneration = () => {
         setTokensReceived(0);
         setProgress(0);
         setIterativeStats(null);
+        setVersions([]);
+        setActiveVersionIndex(-1);
         setSearchSources(null);
         setSonarCitations(null);
         setIsUpdated(false);
@@ -76,6 +81,12 @@ export const useSummaryGeneration = () => {
         // Iterative
         iterativeStats,
         setIterativeStats,
+        versions,
+        setVersions,
+        activeVersionIndex,
+        setActiveVersionIndex,
+        showDiff,
+        setShowDiff,
 
         // Search
         searchSources,

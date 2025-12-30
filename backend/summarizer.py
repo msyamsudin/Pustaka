@@ -1379,6 +1379,13 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 # Validation & Fallback for Critic
                 score = critic_res.get("score", 0)
                 issues = critic_res.get("issues", [])
+                
+                # If issues is empty, aggregate from categorized keys (new format)
+                if not issues:
+                    for key in ["structural_issues", "epistemic_issues", "linguistic_issues", "analytical_issues"]:
+                        if key in critic_res and isinstance(critic_res[key], list):
+                            issues.extend(critic_res[key])
+                
                 fixes = critic_res.get("fixes", [])
                 
                 # Update best draft if better

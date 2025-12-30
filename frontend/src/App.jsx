@@ -21,6 +21,9 @@ import LibrarySidebar from './components/LibrarySidebar';
 import HistorySidebar from './components/HistorySidebar';
 import BookInputForm from './components/forms/BookInputForm';
 import VerificationResultCard from './components/cards/VerificationResultCard';
+import VersionNavigator from './components/common/VersionNavigator';
+import DiffView from './components/common/DiffView';
+import { computeDiff } from './utils/diffUtils';
 
 import { applyMarkdownFormat } from './utils/markdownUtils';
 
@@ -85,7 +88,9 @@ function App() {
     searchSources, setSearchSources, showSearchSources, setShowSearchSources,
     sonarCitations, setSonarCitations,
     isUpdated, setIsUpdated,
-    isSelectionMode, setIsSelectionMode, selectedVariantIds, setSelectedVariantIds
+    isSelectionMode, setIsSelectionMode, selectedVariantIds, setSelectedVariantIds,
+    versions, setVersions, activeVersionIndex, setActiveVersionIndex,
+    showDiff, setShowDiff
   } = useSummaryGeneration();
 
   // Library Management
@@ -207,6 +212,12 @@ function App() {
     } finally {
       setIsElaborating(false);
     }
+  };
+
+  const handleVersionChange = (index) => {
+    if (index < 0 || index >= versions.length) return;
+    setActiveVersionIndex(index);
+    setSummary(versions[index]);
   };
 
   const handleInitiateSave = () => {
@@ -613,6 +624,9 @@ function App() {
       setSonarCitations(null);
       setShowSearchSources(false);
       setIterativeStats(null); // Reset stats
+      setVersions([]);
+      setActiveVersionIndex(-1);
+      setShowDiff(false);
     }
     setStreamingStatus(isResume ? "Re-establishing knowledge gateway..." : (iterativeMode ? "Initializing Iterative Mode..." : "Initializing synthesis engine..."));
 
@@ -723,6 +737,13 @@ function App() {
                 if (data.content && (data.event === 'draft_complete' || data.event === 'refine_complete')) {
                   accumulatedSummary = data.content; // REPLACE, don't append
                   setSummary(accumulatedSummary);
+
+                  // Update Versions
+                  setVersions(prev => {
+                    const newVersions = [...prev, data.content];
+                    setActiveVersionIndex(newVersions.length - 1);
+                    return newVersions;
+                  });
 
                   // Trigger Visual Feedback
                   setIsUpdated(true);
@@ -991,6 +1012,9 @@ function App() {
     setShowLibrary(false);
     setShowHistory(false);
     setIterativeStats(null); // Clear iterative progress on full reset
+    setVersions([]);
+    setActiveVersionIndex(-1);
+    setShowDiff(false);
     setHighQuality(false);
     setIsSelectionMode(false);
     setSelectedVariantIds([]);
@@ -1690,31 +1714,45 @@ function App() {
               </div>
             </div>
 
-            <div className={`markdown-content ${isUpdated ? 'content-updated' : ''}`}>
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  code({ node, inline, className, children, ...props }) {
-                    const content = String(children);
+            <VersionNavigator
+              versions={versions}
+              activeIndex={activeVersionIndex}
+              onChange={handleVersionChange}
+              summarizing={summarizing}
+              showDiff={showDiff}
+              onToggleDiff={() => setShowDiff(!showDiff)}
+            />
 
-                    if (!inline && className === 'language-ref-section') {
-                      const inner = content;
-                      const items = [];
-                      const regex = /(\d+)\.\s+\*\*(.*?)\*\*:\s+\[(.*?)\]\((.*?)\)/g;
-                      let match;
-                      while ((match = regex.exec(inner)) !== null) {
-                        items.push({ id: match[1], label: match[2], title: match[3], url: match[4] });
-                      }
+            <div className={`markdown-content ${isUpdated ? 'content-updated' : ''}`} style={{ position: 'relative' }}>
+              {showDiff && activeVersionIndex > 0 ? (
+                <DiffView diff={computeDiff(versions[activeVersionIndex - 1], versions[activeVersionIndex])} />
+              ) : (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    p: ({ node, ...props }) => <p style={{ marginBottom: '1.2rem', lineHeight: '1.7' }} {...props} />,
+                    li: ({ node, ...props }) => <li style={{ marginBottom: '0.5rem' }} {...props} />,
+                    h1: ({ node, ...props }) => <h1 style={{ color: 'var(--accent-color)', marginTop: '2rem' }} {...props} />,
+                    h2: ({ node, ...props }) => <h2 style={{ color: 'var(--accent-color)', marginTop: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.5rem' }} {...props} />,
+                    strong: ({ node, ...props }) => <strong style={{ color: 'var(--text-primary)', fontWeight: '700' }} {...props} />,
+                    code({ node, inline, className, children, ...props }) {
+                      const content = String(children);
 
-                      if (items.length === 0) return null;
+                      if (!inline && className === 'language-ref-section') {
+                        const inner = content;
+                        const items = [];
+                        const regex = /(\d+)\.\s+\*\*(.*?)\*\*:\s+\[(.*?)\]\((.*?)\)/g;
+                        let match;
+                        while ((match = regex.exec(inner)) !== null) {
+                          items.push({ id: match[1], label: match[2], title: match[3], url: match[4] });
+                        }
 
-                      return (
-                        <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
+                        if (items.length === 0) return null;
 
-                          <div className="premium-ref-grid">
-                            {items.map((item, idx) => {
-                              const isWiki = item.label.toLowerCase().includes('wikipedia');
-                              return (
+                        return (
+                          <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
+                            <div className="premium-ref-grid">
+                              {items.map((item, idx) => (
                                 <a
                                   key={idx}
                                   href={item.url}
@@ -1725,101 +1763,99 @@ function App() {
                                 >
                                   <div className="ref-card-main-title">{item.title}</div>
                                   <div className="ref-card-footer-url">
-                                    {new URL(item.url ? item.url : 'http://localhost').hostname}
+                                    {new URL(item.url || 'http://localhost').hostname}
                                   </div>
                                 </a>
-                              );
-                            })}
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      );
+                        );
+                      }
+                      return <code className={className} {...props}>{children}</code>;
                     }
-                    return <code className={className} {...props}>{children}</code>;
-                  }
-                }}
-              >
-                {summary ? summary
-                  .replace(/\[REF_SECTION\]([\s\S]*?)\[\/REF_SECTION\]/g, '\n\n```ref-section\n$1\n```\n\n')
-                  : ""}
-              </ReactMarkdown>
-
-              {/* Perplexity Sonar Citations Display */}
-              {sonarCitations && sonarCitations.citations && sonarCitations.citations.length > 0 && (
-                <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    marginBottom: '1rem',
-                    paddingBottom: '0.5rem',
-                    borderBottom: '1px solid var(--border-color)'
-                  }}>
-                    <Sparkles size={16} style={{ color: 'var(--accent-color)' }} />
-                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
-                      Sonar Citations
-                    </h3>
-                    <span className="badge" style={{
-                      background: 'rgba(147, 51, 234, 0.1)',
-                      color: '#9333ea',
-                      border: '1px solid rgba(147, 51, 234, 0.2)',
-                      fontSize: '0.7rem'
-                    }}>
-                      {sonarCitations.total_count} sources
-                    </span>
-                  </div>
-                  <div className="premium-ref-grid">
-                    {sonarCitations.citations.map((citation, idx) => (
-                      <a
-                        key={idx}
-                        href={citation.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ref-card-premium stagger-item"
-                        style={{ '--stagger-idx': idx }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                          <span style={{
-                            fontSize: '0.7rem',
-                            fontWeight: '700',
-                            color: 'var(--accent-color)',
-                            background: 'rgba(147, 51, 234, 0.1)',
-                            padding: '0.1rem 0.4rem',
-                            borderRadius: '4px'
-                          }}>
-                            [{citation.index}]
-                          </span>
-                          <div className="ref-card-main-title" style={{ flex: 1 }}>
-                            {citation.title}
-                          </div>
-                        </div>
-                        {citation.published_date && (
-                          <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                            📅 {citation.published_date}
-                          </div>
-                        )}
-                        <div className="ref-card-footer-url">
-                          {new URL(citation.url).hostname}
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {summarizing && summary && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>
-                  <div className="spinner" style={{ width: '16px', height: '16px' }}></div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{streamingStatus}</span>
-                    {progress > 0 && (
-                      <span style={{ fontSize: '0.65rem', color: 'var(--accent-color)', fontWeight: 'bold' }}>
-                        PHASE PROGRESS: {progress}%
-                      </span>
-                    )}
-                  </div>
-                </div>
+                  }}
+                >
+                  {summary ? summary.replace(/\[REF_SECTION\]([\s\S]*?)\[\/REF_SECTION\]/g, '\n\n```ref-section\n$1\n```\n\n') : ""}
+                </ReactMarkdown>
               )}
             </div>
+
+            {/* Perplexity Sonar Citations Display */}
+            {sonarCitations && sonarCitations.citations && sonarCitations.citations.length > 0 && (
+              <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  marginBottom: '1rem',
+                  paddingBottom: '0.5rem',
+                  borderBottom: '1px solid var(--border-color)'
+                }}>
+                  <Sparkles size={16} style={{ color: 'var(--accent-color)' }} />
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                    Sonar Citations
+                  </h3>
+                  <span className="badge" style={{
+                    background: 'rgba(147, 51, 234, 0.1)',
+                    color: '#9333ea',
+                    border: '1px solid rgba(147, 51, 234, 0.2)',
+                    fontSize: '0.7rem'
+                  }}>
+                    {sonarCitations.total_count} sources
+                  </span>
+                </div>
+                <div className="premium-ref-grid">
+                  {sonarCitations.citations.map((citation, idx) => (
+                    <a
+                      key={idx}
+                      href={citation.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ref-card-premium stagger-item"
+                      style={{ '--stagger-idx': idx }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                        <span style={{
+                          fontSize: '0.7rem',
+                          fontWeight: '700',
+                          color: 'var(--accent-color)',
+                          background: 'rgba(147, 51, 234, 0.1)',
+                          padding: '0.1rem 0.4rem',
+                          borderRadius: '4px'
+                        }}>
+                          [{citation.index}]
+                        </span>
+                        <div className="ref-card-main-title" style={{ flex: 1 }}>
+                          {citation.title}
+                        </div>
+                      </div>
+                      {citation.published_date && (
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                          📅 {citation.published_date}
+                        </div>
+                      )}
+                      <div className="ref-card-footer-url">
+                        {new URL(citation.url).hostname}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {summarizing && summary && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>
+                <div className="spinner" style={{ width: '16px', height: '16px' }}></div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{streamingStatus}</span>
+                  {progress > 0 && (
+                    <span style={{ fontSize: '0.65rem', color: 'var(--accent-color)', fontWeight: 'bold' }}>
+                      PHASE PROGRESS: {progress}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {(usageStats || summarizing) && (
               <div style={{
@@ -1831,26 +1867,36 @@ function App() {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '1rem'
+                flexWrap: 'nowrap',
+                gap: '0.75rem',
+                overflow: 'hidden'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 1, minWidth: 0 }}>
                   <span className="badge" style={{
                     background: 'rgba(30, 41, 59, 0.5)',
                     color: '#38bdf8',
                     border: '1px solid rgba(56, 189, 248, 0.2)',
                     fontSize: '0.75rem',
-                    padding: '0.15rem 0.6rem'
+                    padding: '0.15rem 0.6rem',
+                    flexShrink: 0
                   }}>
                     {usageStats?.provider || provider}
                   </span>
-                  <span style={{ opacity: 0.2 }}>•</span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '500' }}>
+                  <span style={{ opacity: 0.2, flexShrink: 0 }}>•</span>
+                  <span style={{
+                    fontSize: '0.8rem',
+                    color: 'var(--text-secondary)',
+                    fontWeight: '500',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    flexShrink: 1
+                  }}>
                     {(usageStats?.model || (provider === 'OpenRouter' ? openRouterModel : provider === 'Groq' ? groqModel : ollamaModel)).split('/').pop()}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexShrink: 0 }}>
                   {usageStats?.cost_estimate && (
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                       <span style={{ opacity: 0.6 }}>Biaya: </span>
@@ -1919,275 +1965,280 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        )}
 
-            {/* Diversity Analysis Visualization */}
-            {diversityAnalysis && usageStats?.is_synthesis && (
-              <div style={{
-                marginTop: '1.5rem',
-                padding: '1rem',
-                background: 'rgba(255,255,255,0.02)',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)'
-              }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
-                  📊 Draft Diversity Analysis
+        {/* Diversity Analysis Visualization */}
+        {
+          diversityAnalysis && usageStats?.is_synthesis && (
+            <div style={{
+              marginTop: '1.5rem',
+              padding: '1rem',
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)'
+            }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
+                📊 Draft Diversity Analysis
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1', minWidth: '200px' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                    Diversity Score
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{
+                      flex: 1,
+                      height: '8px',
+                      background: 'rgba(255,255,255,0.1)',
+                      borderRadius: '4px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        width: `${diversityAnalysis.diversity_score * 100}%`,
+                        height: '100%',
+                        background: diversityAnalysis.diversity_score < 0.15 ? 'var(--error)' :
+                          diversityAnalysis.diversity_score < 0.40 ? 'var(--warning)' : 'var(--success)',
+                        transition: 'width 0.3s ease'
+                      }} />
+                    </div>
+                    <span style={{ fontSize: '0.9rem', fontWeight: '600', minWidth: '45px' }}>
+                      {(diversityAnalysis.diversity_score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.25rem', fontStyle: 'italic' }}>
+                    {diversityAnalysis.interpretation === 'very_similar' && '⚠️ Varian sangat mirip'}
+                    {diversityAnalysis.interpretation === 'moderate_diversity' && '✓ Keragaman moderat'}
+                    {diversityAnalysis.interpretation === 'high_diversity' && '✨ Keragaman tinggi (ideal)'}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                {diversityAnalysis.most_different_sections && diversityAnalysis.most_different_sections.length > 0 && (
                   <div style={{ flex: '1', minWidth: '200px' }}>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                      Diversity Score
+                      Bagian Paling Berbeda
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{
-                        flex: 1,
-                        height: '8px',
-                        background: 'rgba(255,255,255,0.1)',
-                        borderRadius: '4px',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          width: `${diversityAnalysis.diversity_score * 100}%`,
-                          height: '100%',
-                          background: diversityAnalysis.diversity_score < 0.15 ? 'var(--error)' :
-                            diversityAnalysis.diversity_score < 0.40 ? 'var(--warning)' : 'var(--success)',
-                          transition: 'width 0.3s ease'
-                        }} />
-                      </div>
-                      <span style={{ fontSize: '0.9rem', fontWeight: '600', minWidth: '45px' }}>
-                        {(diversityAnalysis.diversity_score * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.25rem', fontStyle: 'italic' }}>
-                      {diversityAnalysis.interpretation === 'very_similar' && '⚠️ Varian sangat mirip'}
-                      {diversityAnalysis.interpretation === 'moderate_diversity' && '✓ Keragaman moderat'}
-                      {diversityAnalysis.interpretation === 'high_diversity' && '✨ Keragaman tinggi (ideal)'}
-                    </div>
-                  </div>
-                  {diversityAnalysis.most_different_sections && diversityAnalysis.most_different_sections.length > 0 && (
-                    <div style={{ flex: '1', minWidth: '200px' }}>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                        Bagian Paling Berbeda
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                        {diversityAnalysis.most_different_sections.slice(0, 3).map((section, idx) => (
-                          <span key={idx} className="badge" style={{
-                            background: 'rgba(147, 51, 234, 0.1)',
-                            color: '#9333ea',
-                            border: '1px solid rgba(147, 51, 234, 0.2)',
-                            fontSize: '0.7rem',
-                            padding: '0.2rem 0.5rem'
-                          }}>
-                            {section}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Synthesis Metadata Display */}
-            {synthesisMetadata && usageStats?.is_synthesis && (
-              <div style={{
-                marginTop: '1.5rem',
-                padding: '1rem',
-                background: 'rgba(255,255,255,0.02)',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)'
-              }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
-                  🔬 Synthesis Transparency Report
-                </div>
-
-                <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                  <div className="badge" style={{ background: 'rgba(34, 197, 94, 0.1)', color: 'var(--success)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-                    ✨ {synthesisMetadata.unique_insights_count} Merged Insights
-                  </div>
-                  <div className="badge" style={{ background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
-                    ⚖️ {synthesisMetadata.conflict_resolutions} Conflicts Resolved
-                  </div>
-                  {usageStats.sections_analyzed && (
-                    <div className="badge" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                      📑 {usageStats.sections_analyzed} Sections Analyzed
-                    </div>
-                  )}
-                  {usageStats.synthesis_method && (
-                    <div className="badge" style={{ background: 'rgba(147, 51, 234, 0.1)', color: '#9333ea', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
-                      🔧 {usageStats.synthesis_method === 'section_by_section' ? 'Section-by-Section' : 'Whole Document'}
-                    </div>
-                  )}
-                </div>
-
-                {synthesisMetadata.section_sources && Object.keys(synthesisMetadata.section_sources).length > 0 && (
-                  <div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                      Section Sources:
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0.5rem', maxHeight: '200px', overflowY: 'auto' }} className="custom-scrollbar">
-                      {Object.entries(synthesisMetadata.section_sources).map(([section, source]) => (
-                        <div key={section} style={{
-                          padding: '0.4rem 0.6rem',
-                          background: 'rgba(255,255,255,0.03)',
-                          borderRadius: '4px',
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      {diversityAnalysis.most_different_sections.slice(0, 3).map((section, idx) => (
+                        <span key={idx} className="badge" style={{
+                          background: 'rgba(147, 51, 234, 0.1)',
+                          color: '#9333ea',
+                          border: '1px solid rgba(147, 51, 234, 0.2)',
                           fontSize: '0.7rem',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: '0.5rem'
+                          padding: '0.2rem 0.5rem'
                         }}>
-                          <span style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {section.split('(')[0].trim()}
-                          </span>
-                          <span style={{
-                            fontSize: '0.65rem',
-                            padding: '0.1rem 0.4rem',
-                            borderRadius: '3px',
-                            whiteSpace: 'nowrap',
-                            background: source === 'merged' ? 'rgba(34, 197, 94, 0.2)' :
-                              source === 'single_source' ? 'rgba(59, 130, 246, 0.2)' :
-                                source === 'synthesis_failed_using_fallback' ? 'rgba(251, 191, 36, 0.2)' :
-                                  source.includes('dominant') ? 'rgba(251, 191, 36, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                            color: source === 'merged' ? 'var(--success)' :
-                              source === 'single_source' ? '#3b82f6' :
-                                source === 'synthesis_failed_using_fallback' ? '#fbbf24' :
-                                  source.includes('dominant') ? '#fbbf24' : 'var(--error)'
-                          }}>
-                            {source === 'merged' ? '🔀 Merged' :
-                              source === 'single_source' ? '📄 Single Source' :
-                                source === 'synthesis_failed_using_fallback' ? '⚠️ Fallback' :
-                                  source.includes('dominant') ? `📌 Draft ${source.match(/\d+/)?.[0]}` : '❌ Failed'}
-                          </span>
-                        </div>
+                          {section}
+                        </span>
                       ))}
                     </div>
                   </div>
                 )}
               </div>
-            )}
+            </div>
+          )
+        }
 
-            {/* New Appendix Section for Notes */}
-            {notes && notes.length > 0 && (
-              <div className="notes-appendix" style={{
-                marginTop: '3rem',
-                paddingTop: '2rem',
-                borderTop: '1px solid var(--border-color)',
-                width: '100%',
-                overflow: 'hidden'
-              }}>
-                <h3 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.75rem',
-                  marginBottom: '2rem',
-                  color: 'var(--accent-color)',
-                  fontSize: '1.2rem',
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase'
-                }}>
-                  <PenTool size={20} />
-                  Lampiran: Diskusi & Elaborasi
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
-                  {notes.map((note, idx) => (
-                    <div key={note.id || idx} className="glass-card note-card" style={{
-                      padding: '1.5rem',
-                      background: 'rgba(255,255,255,0.02)',
-                      borderLeft: '3px solid var(--accent-color)',
-                      borderRadius: '0 8px 8px 0',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      overflow: 'hidden',
-                      wordBreak: 'break-word'
-                    }}>
-                      <div style={{
-                        fontSize: '0.75rem',
-                        color: 'var(--text-secondary)',
-                        marginBottom: '1rem',
+        {/* Synthesis Metadata Display */}
+        {
+          synthesisMetadata && usageStats?.is_synthesis && (
+            <div style={{
+              marginTop: '1.5rem',
+              padding: '1rem',
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)'
+            }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
+                🔬 Synthesis Transparency Report
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                <div className="badge" style={{ background: 'rgba(34, 197, 94, 0.1)', color: 'var(--success)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                  ✨ {synthesisMetadata.unique_insights_count} Merged Insights
+                </div>
+                <div className="badge" style={{ background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
+                  ⚖️ {synthesisMetadata.conflict_resolutions} Conflicts Resolved
+                </div>
+                {usageStats.sections_analyzed && (
+                  <div className="badge" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                    📑 {usageStats.sections_analyzed} Sections Analyzed
+                  </div>
+                )}
+                {usageStats.synthesis_method && (
+                  <div className="badge" style={{ background: 'rgba(147, 51, 234, 0.1)', color: '#9333ea', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
+                    🔧 {usageStats.synthesis_method === 'section_by_section' ? 'Section-by-Section' : 'Whole Document'}
+                  </div>
+                )}
+              </div>
+
+              {synthesisMetadata.section_sources && Object.keys(synthesisMetadata.section_sources).length > 0 && (
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                    Section Sources:
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0.5rem', maxHeight: '200px', overflowY: 'auto' }} className="custom-scrollbar">
+                    {Object.entries(synthesisMetadata.section_sources).map(([section, source]) => (
+                      <div key={section} style={{
+                        padding: '0.4rem 0.6rem',
+                        background: 'rgba(255,255,255,0.03)',
+                        borderRadius: '4px',
+                        fontSize: '0.7rem',
                         display: 'flex',
                         justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        gap: '1rem',
-                        borderBottom: '1px solid rgba(255,255,255,0.05)',
-                        paddingBottom: '0.5rem'
+                        alignItems: 'center',
+                        gap: '0.5rem'
                       }}>
+                        <span style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {section.split('(')[0].trim()}
+                        </span>
                         <span style={{
-                          fontStyle: 'italic',
-                          flex: 1,
-                          wordBreak: 'break-word',
-                          overflowWrap: 'anywhere'
+                          fontSize: '0.65rem',
+                          padding: '0.1rem 0.4rem',
+                          borderRadius: '3px',
+                          whiteSpace: 'nowrap',
+                          background: source === 'merged' ? 'rgba(34, 197, 94, 0.2)' :
+                            source === 'single_source' ? 'rgba(59, 130, 246, 0.2)' :
+                              source === 'synthesis_failed_using_fallback' ? 'rgba(251, 191, 36, 0.2)' :
+                                source.includes('dominant') ? 'rgba(251, 191, 36, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                          color: source === 'merged' ? 'var(--success)' :
+                            source === 'single_source' ? '#3b82f6' :
+                              source === 'synthesis_failed_using_fallback' ? '#fbbf24' :
+                                source.includes('dominant') ? '#fbbf24' : 'var(--error)'
                         }}>
-                          Ref: "{note.ref_text}"
+                          {source === 'merged' ? '🔀 Merged' :
+                            source === 'single_source' ? '📄 Single Source' :
+                              source === 'synthesis_failed_using_fallback' ? '⚠️ Fallback' :
+                                source.includes('dominant') ? `📌 Draft ${source.match(/\d+/)?.[0]}` : '❌ Failed'}
                         </span>
-                        <span style={{ opacity: 0.6, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                          {new Date(note.timestamp).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
                       </div>
-                      <div className="markdown-content notes-markdown" style={{
-                        fontSize: '0.95rem',
-                        lineHeight: '1.6',
-                        maxWidth: '100%',
-                        overflowX: 'auto',
-                        paddingBottom: '4px'
-                      }}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {note.content_markdown}
-                        </ReactMarkdown>
-                      </div>
-
-                      <div style={{
-                        marginTop: '1rem',
-                        display: 'flex',
-                        justifyContent: 'flex-end',
-                        borderTop: '1px solid rgba(255,255,255,0.03)',
-                        paddingTop: '0.75rem'
-                      }}>
-                        <button
-                          onClick={() => handleEditNote(note)}
-                          className="btn-secondary"
-                          style={{
-                            padding: '0.3rem 0.6rem',
-                            fontSize: '0.7rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            minWidth: 'auto',
-                            opacity: 0.8
-                          }}
-                        >
-                          <Edit3 size={12} /> Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteNote(note.id)}
-                          className="btn-danger"
-                          style={{
-                            padding: '0.3rem 0.6rem',
-                            fontSize: '0.7rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            minWidth: 'auto',
-                            opacity: 0.8,
-                            color: 'white',
-                            border: 'none',
-                            background: 'rgba(239, 68, 68, 0.1)'
-                          }}
-                        >
-                          <Trash2 size={12} /> Hapus
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div >
-        )
+              )}
+            </div>
+          )
         }
-      </div >
+
+        {/* New Appendix Section for Notes */}
+        {
+          notes && notes.length > 0 && (
+            <div className="notes-appendix" style={{
+              marginTop: '3rem',
+              paddingTop: '2rem',
+              borderTop: '1px solid var(--border-color)',
+              width: '100%',
+              overflow: 'hidden'
+            }}>
+              <h3 style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                marginBottom: '2rem',
+                color: 'var(--accent-color)',
+                fontSize: '1.2rem',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase'
+              }}>
+                <PenTool size={20} />
+                Lampiran: Diskusi & Elaborasi
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
+                {notes.map((note, idx) => (
+                  <div key={note.id || idx} className="glass-card note-card" style={{
+                    padding: '1.5rem',
+                    background: 'rgba(255,255,255,0.02)',
+                    borderLeft: '3px solid var(--accent-color)',
+                    borderRadius: '0 8px 8px 0',
+                    maxWidth: '100%',
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                    wordBreak: 'break-word'
+                  }}>
+                    <div style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--text-secondary)',
+                      marginBottom: '1rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      gap: '1rem',
+                      borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      paddingBottom: '0.5rem'
+                    }}>
+                      <span style={{
+                        fontStyle: 'italic',
+                        flex: 1,
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere'
+                      }}>
+                        Ref: "{note.ref_text}"
+                      </span>
+                      <span style={{ opacity: 0.6, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                        {new Date(note.timestamp).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <div className="markdown-content notes-markdown" style={{
+                      fontSize: '0.95rem',
+                      lineHeight: '1.6',
+                      maxWidth: '100%',
+                      overflowX: 'auto',
+                      paddingBottom: '4px'
+                    }}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {note.content_markdown}
+                      </ReactMarkdown>
+                    </div>
+
+                    <div style={{
+                      marginTop: '1rem',
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      borderTop: '1px solid rgba(255,255,255,0.03)',
+                      paddingTop: '0.75rem'
+                    }}>
+                      <button
+                        onClick={() => handleEditNote(note)}
+                        className="btn-secondary"
+                        style={{
+                          padding: '0.3rem 0.6rem',
+                          fontSize: '0.7rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          minWidth: 'auto',
+                          opacity: 0.8
+                        }}
+                      >
+                        <Edit3 size={12} /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteNote(note.id)}
+                        className="btn-danger"
+                        style={{
+                          padding: '0.3rem 0.6rem',
+                          fontSize: '0.7rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          minWidth: 'auto',
+                          opacity: 0.8,
+                          color: 'white',
+                          border: 'none',
+                          background: 'rgba(239, 68, 68, 0.1)'
+                        }}
+                      >
+                        <Trash2 size={12} /> Hapus
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        }
+      </div>
 
       {/* Custom Modals */}
-      < SimpleModal
+      <SimpleModal
         isOpen={alertModal.isOpen}
         title={alertModal.title}
         message={alertModal.message}
