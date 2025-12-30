@@ -1,610 +1,136 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Book, CheckCircle, Search, AlertCircle, Sparkles, Settings, Save, RefreshCw, History, X, Trash2, BookOpen, RotateCcw, Home, PenTool, Eye, EyeOff, Copy, Check, Tag, Edit3, Bold, Italic, List, Quote, Heading, Code, Minus, MessageSquarePlus, Share2, Globe, ExternalLink } from 'lucide-react';
 
+// Service Imports
+import * as api from './services/api';
+import { getImageUrl } from './utils/helpers';
+
+// Component Imports
+import SearchableSelect from './components/common/SearchableSelect';
+import Toast from './components/common/Toast';
+import SkeletonSummary from './components/common/SkeletonSummary';
+import IterativeProgress from './components/common/IterativeProgress';
+import BackendStatusBanner from './components/common/BackendStatusBanner';
+import SimpleModal from './components/modals/SimpleModal';
+import CoverSelectionModal from './components/modals/CoverSelectionModal';
+import MetadataEditModal from './components/modals/MetadataEditModal';
+import SettingsPanel from './components/SettingsPanel';
+import LibrarySidebar from './components/LibrarySidebar';
+import HistorySidebar from './components/HistorySidebar';
+import BookInputForm from './components/forms/BookInputForm';
+import VerificationResultCard from './components/cards/VerificationResultCard';
+
+import { applyMarkdownFormat } from './utils/markdownUtils';
+
+// Custom Hooks
+import {
+  useModalState,
+  useSettings,
+  useBookVerification,
+  useSummaryGeneration,
+  useLibraryManagement,
+  useHistory,
+  useElaboration,
+  useNoteManagement,
+  useUIState
+} from './hooks';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
 
 
-const getImageUrl = (url, timestamp) => {
-  if (!url) return '';
-  if (url.startsWith('http') || url.startsWith('blob:')) return url;
-
-  // Handle relative paths (with or without leading slash)
-  const baseUrl = API_BASE_URL.replace('/api', '');
-  const cleanUrl = url.startsWith('/') ? url : `/${url}`;
-
-  // Cache busting: append timestamp if provided
-  const fullUrl = `${baseUrl}${cleanUrl}`;
-  return timestamp ? `${fullUrl}?t=${new Date(timestamp).getTime()}` : fullUrl;
-};
-
-const SearchableSelect = ({ options, value, onChange, placeholder = "Select..." }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const containerRef = React.useRef(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setSearch(value);
-    }
-  }, [value, isOpen]);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
-        setIsOpen(false);
-        // On close, reset search to value if logic requires, but simple close is fine 
-        // Logic handled by effect above (if !isOpen -> search=value)
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const filteredOptions = options.filter(opt =>
-    opt.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const handleSelect = (opt) => {
-    onChange(opt);
-    setSearch(opt);
-    setIsOpen(false);
-  };
-
-  return (
-    <div className="searchable-select-container" ref={containerRef}>
-      <input
-        type="text"
-        className="input-field"
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          if (!isOpen) setIsOpen(true);
-        }}
-        onFocus={() => {
-          setIsOpen(true);
-          setSearch("");
-        }}
-        placeholder={placeholder}
-        style={{ marginBottom: 0 }}
-      />
-      {isOpen && (
-        <div className="searchable-select-menu custom-scrollbar animate-fade-in">
-          {filteredOptions.length > 0 ? (
-            filteredOptions.map((opt) => (
-              <div
-                key={opt}
-                className={`searchable-select-item ${opt === value ? "selected" : ""}`}
-                onClick={() => handleSelect(opt)}
-              >
-                {opt}
-              </div>
-            ))
-          ) : (
-            <div style={{ padding: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.9rem' }}>
-              Tidak ditemukan
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const SimpleModal = ({ isOpen, title, message, onClose, onConfirm, confirmText = "OK", cancelText = "Batal", isDanger = false, showCancel = true }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="modal-overlay animate-fade-in" style={{ zIndex: 1100 }}>
-      <div className="glass-card" style={{ width: '100%', maxWidth: '400px', padding: '1.5rem', textAlign: 'center' }}>
-        <h3 style={{ marginTop: 0, fontSize: '1.25rem' }}>{title}</h3>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>{message}</p>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-          {showCancel && (
-            <button onClick={onClose} className="btn-secondary" style={{ minWidth: '80px' }}>
-              {cancelText}
-            </button>
-          )}
-          <button
-            onClick={() => {
-              if (onConfirm) onConfirm();
-              onClose();
-            }}
-            className={isDanger ? "btn-danger" : "btn-primary"}
-            style={{ minWidth: '80px', color: isDanger ? 'white' : '' }}
-          >
-            {confirmText}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const CoverSelectionModal = ({ isOpen, book, onClose, onSave }) => {
-  const [candidates, setCandidates] = useState([]);
-  const [customUrl, setCustomUrl] = useState('');
-  const [selectedUrl, setSelectedUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  useEffect(() => {
-    if (isOpen && book) {
-      setSearchQuery(`${book.title} ${book.author}`);
-      setCandidates([]);
-      setSelectedUrl(book.image_url || '');
-      setCustomUrl('');
-      // Pre-populate with existing verified sources if any
-      const existing = book.summaries?.[0]?.metadata?.sources
-        .filter(s => s.image_url)
-        .map(s => ({ url: s.image_url, source: s.source })) || [];
-
-      // Also add current book image if not in sources (e.g. manually set before)
-      if (book.image_url && !existing.find(e => e.url === book.image_url)) {
-        existing.unshift({ url: book.image_url, source: 'Current' });
-      }
-      setCandidates(existing);
-
-      // Auto-search if no candidates
-      if (existing.length === 0) {
-        handleSearch(`${book.title} ${book.author}`);
-      }
-    }
-  }, [isOpen, book]);
-
-  const handleSearch = async (query) => {
-    if (!query) return;
-    setLoading(true);
-    try {
-      const res = await axios.get(`${API_BASE_URL}/covers/search`, { params: { query } });
-      // Merge with existing but avoid duplicates
-      setCandidates(prev => {
-        const newOnes = res.data.filter(n => !prev.find(p => p.url === n.url));
-        return [...prev, ...newOnes];
-      });
-    } catch (err) {
-      console.error("Search failed", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSave = () => {
-    const finalUrl = selectedUrl === 'custom' ? customUrl : selectedUrl;
-    onSave(finalUrl);
-  };
-
-  if (!isOpen || !book) return null;
-
-  return (
-    <div className="modal-overlay animate-fade-in" style={{ zIndex: 1200 }}>
-      <div className="glass-card" style={{ width: '100%', maxWidth: '700px', padding: '1.5rem', maxHeight: '90vh', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h3 style={{ margin: 0 }}>Ganti Sampul: "{book.title}"</h3>
-          <button onClick={onClose} className="icon-btn"><X size={20} /></button>
-        </div>
-
-        <div className="input-group">
-          <label>Cari Kandidat Sampul</label>
-          <div className="mobile-stack" style={{ display: 'flex', gap: '0.5rem' }}>
-            <input
-              type="text"
-              className="input-field"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
-            />
-            <button className="btn-secondary" onClick={() => handleSearch(searchQuery)} disabled={loading} style={{ minWidth: '50px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-              {loading ? <RefreshCw className="spin" size={18} /> : <Search size={18} />}
-            </button>
-          </div>
-        </div>
-
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Pilih Sampul:</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '1rem', maxHeight: '300px', overflowY: 'auto', padding: '4px' }}>
-            {candidates.map((cand, index) => (
-              <div
-                key={index}
-                className={`cover-option ${selectedUrl === cand.url ? 'selected' : ''}`}
-                onClick={() => { setSelectedUrl(cand.url); setCustomUrl(''); }}
-                style={{
-                  aspectRatio: '2/3', border: `2px solid ${selectedUrl === cand.url ? 'var(--accent-color)' : 'transparent'}`,
-                  borderRadius: '6px', overflow: 'hidden', cursor: 'pointer', position: 'relative',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)', backgroundColor: '#000'
-                }}
-              >
-                <img src={getImageUrl(cand.url)} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => e.target.style.display = 'none'} />
-
-                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', color: 'white', fontSize: '0.65rem', padding: '2px 4px', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {cand.source}
-                </div>
-
-                {selectedUrl === cand.url && (
-                  <div style={{ position: 'absolute', top: '4px', right: '4px', background: 'var(--accent-color)', borderRadius: '50%', padding: '2px', display: 'flex' }}>
-                    <CheckCircle size={14} color="white" />
-                  </div>
-                )}
-              </div>
-            ))}
-            {candidates.length === 0 && !loading && (
-              <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                Tidak ada kandidat. Coba cari manual.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Atau URL Gambar Manual:</label>
-          <input
-            type="text"
-            className="input-field"
-            placeholder="https://example.com/cover.jpg"
-            value={customUrl}
-            onChange={(e) => { setCustomUrl(e.target.value); setSelectedUrl('custom'); }}
-          />
-          {customUrl && selectedUrl === 'custom' && (
-            <div style={{ width: '80px', height: '120px', border: '2px solid var(--accent-color)', borderRadius: '4px', overflow: 'hidden', marginTop: '0.5rem' }}>
-              <img src={customUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => e.target.style.display = 'none'} />
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
-          <button onClick={onClose} className="btn-secondary">Batal</button>
-          <button onClick={handleSave} className="btn-primary" disabled={(!selectedUrl || (selectedUrl === 'custom' && !customUrl))}>Simpan Sampul</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-
-const Toast = ({ message, type = 'success', onClose }) => {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 3000);
-    return () => clearTimeout(timer);
-  }, [onClose]);
-
-  return (
-    <div className="animate-fade-in" style={{
-      position: 'fixed', bottom: '24px', right: '24px',
-      backgroundColor: type === 'error' ? 'var(--error)' : 'var(--success)',
-      color: 'white', padding: '1rem 1.5rem', borderRadius: '8px',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 2000,
-      display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: '500'
-    }}>
-      {type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
-      {message}
-    </div>
-  );
-};
-
-
-
-const SkeletonSummary = ({ status, progress, onStop }) => (
-  <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem', border: '1px dashed var(--border-color)', position: 'relative', overflow: 'hidden' }}>
-    {/* Progress Bar Background */}
-    {progress > 0 && (
-      <div style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        height: '4px',
-        width: '100%',
-        background: 'rgba(255,255,255,0.05)',
-        zIndex: 10
-      }}>
-        <div style={{
-          height: '100%',
-          width: `${progress}%`,
-          background: 'linear-gradient(90deg, var(--accent-color), #60a5fa)',
-          boxShadow: '0 0 10px var(--accent-color)',
-          transition: 'width 0.4s ease-out'
-        }}></div>
-      </div>
-    )}
-
-    <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', padding: progress > 0 ? '1rem 0 0 0' : '0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
-        <div className="spinner" style={{ width: '20px', height: '20px', flexShrink: 0 }}></div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-            {status || "Initializing intelligence synthesis engine..."}
-          </span>
-          {progress > 0 && (
-            <span style={{ fontSize: '0.7rem', color: 'var(--accent-color)', fontWeight: 'bold', letterSpacing: '0.5px' }}>
-              PHASE PROGRESS: {progress}%
-            </span>
-          )}
-        </div>
-      </div>
-      <button
-        onClick={onStop}
-        className="btn-secondary"
-        style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
-      >
-        <X size={14} /> Batal
-      </button>
-    </div>
-    <div className="skeleton-block" style={{ width: '90%' }}></div>
-    <div className="skeleton-block" style={{ width: '95%' }}></div>
-    <div className="skeleton-block" style={{ width: '85%' }}></div>
-    <div className="skeleton-block" style={{ width: '40%', marginTop: '1.5rem' }}></div>
-    <div className="skeleton-block" style={{ width: '92%' }}></div>
-    <div className="skeleton-block" style={{ width: '88%' }}></div>
-  </div>
-);
-
-const IterativeProgress = ({ stats }) => {
-  if (!stats) return null;
-  const steps = stats.steps || [];
-  const currentStep = steps[steps.length - 1] || {};
-
-  return (
-    <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem', border: '1px solid var(--accent-color)', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ background: 'rgba(var(--accent-rgb), 0.1)', padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--accent-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Sparkles size={16} /> Iterative Self-Correction
-        </h3>
-        <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
-          Iteration {stats.iteration || 1}/3
-        </span>
-      </div>
-
-      <div style={{ padding: '1.5rem' }}>
-        {steps.map((step, idx) => (
-          <div key={idx} style={{ marginBottom: '1rem', paddingLeft: '1rem', borderLeft: '2px solid var(--border-color)', position: 'relative' }}>
-            <div style={{ position: 'absolute', left: '-6px', top: '0', width: '10px', height: '10px', borderRadius: '50%', background: idx === steps.length - 1 ? 'var(--accent-color)' : 'var(--text-secondary)' }}></div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '4px' }}>
-              {step.type === 'draft' && `Draft ${step.iteration}`}
-              {step.type === 'critic' && `Critic Analysis (Score: ${step.score})`}
-              {step.type === 'refine' && `Refining Draft...`}
-            </div>
-
-            {step.type === 'critic' && step.issues && step.issues.length > 0 && (
-              <div style={{ background: 'rgba(255,0,0,0.1)', padding: '0.5rem', borderRadius: '4px', marginTop: '4px' }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--error)', fontWeight: 'bold' }}>Issues Identified:</div>
-                <ul style={{ margin: '4px 0 0 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  {step.issues.map((issue, i) => <li key={i}>{issue}</li>)}
-                </ul>
-              </div>
-            )}
-          </div>
-        ))}
-
-        {stats.status && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1rem', color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.9rem' }}>
-            <div className="spinner" style={{ width: '14px', height: '14px' }}></div>
-            {stats.status}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const MetadataEditModal = ({ isOpen, book, title, author, isbn, genre, setTitle, setAuthor, setIsbn, setGenre, onSave, onClose, isSaving }) => {
-  if (!isOpen || !book) return null;
-
-  return (
-    <div className="modal-overlay">
-      <div className="modal-content glass-card animate-scale-up" style={{ maxWidth: '500px', width: '90%' }}>
-        <h2 style={{ marginTop: 0, marginBottom: '1.5rem' }}>Edit Info Buku</h2>
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Judul</label>
-          <input
-            type="text"
-            className="input-field"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Penulis</label>
-          <input
-            type="text"
-            className="input-field"
-            value={author}
-            onChange={(e) => setAuthor(e.target.value)}
-          />
-        </div>
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>ISBN</label>
-          <input
-            type="text"
-            className="input-field"
-            value={isbn}
-            onChange={(e) => setIsbn(e.target.value)}
-          />
-        </div>
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Genre</label>
-          <input
-            type="text"
-            className="input-field"
-            value={genre}
-            onChange={(e) => setGenre(e.target.value)}
-            placeholder="Contoh: Computer Science, Fiction"
-          />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-          <button className="btn-secondary" onClick={onClose} disabled={isSaving}>Batal</button>
-          <button className="btn-primary" onClick={onSave} disabled={isSaving}>
-            {isSaving ? "Menyimpan..." : "Simpan Perubahan"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 function App() {
-  const [isbn, setIsbn] = useState('');
-  const [title, setTitle] = useState('');
-  const [author, setAuthor] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [verificationResult, setVerificationResult] = useState(null);
-  const [summary, setSummary] = useState(null);
-  const [usageStats, setUsageStats] = useState(null);
-  const [diversityAnalysis, setDiversityAnalysis] = useState(null);
-  const [synthesisMetadata, setSynthesisMetadata] = useState(null);
+  // ========== Custom Hooks ==========
+  // Modal Management
+  const {
+    confirmModal, alertModal, toast,
+    showAlert, closeAlert, showConfirm, closeConfirm, showToast, setToast
+  } = useModalState();
 
-  const [error, setError] = useState(null);
+  // Settings Management
+  const {
+    provider, setProvider,
+    openRouterKey, setOpenRouterKey, openRouterModel, setOpenRouterModel,
+    ollamaBaseUrl, setOllamaBaseUrl, ollamaModel, setOllamaModel,
+    groqKey, setGroqKey, groqModel, setGroqModel,
+    notionApiKey, setNotionApiKey, notionDatabaseId, setNotionDatabaseId,
+    braveApiKey, setBraveApiKey, enableSearchEnrichment, setEnableSearchEnrichment,
+    searchMaxResults, setSearchMaxResults, showBraveKey, setShowBraveKey,
+    braveKeyValid, setBraveKeyValid, validatingBraveKey, setValidatingBraveKey,
+    showSettings, setShowSettings, showApiKey, setShowApiKey,
+    keyValid, setKeyValid, keyError, setKeyError, validatingKey, setValidatingKey,
+    availableModels, setAvailableModels,
+    backendUp, setBackendUp, configLoaded, setConfigLoaded,
+    iterativeMode, setIterativeMode, criticModel, setCriticModel,
+    highQuality, setHighQuality, draftCount, setDraftCount,
+    loadConfiguration
+  } = useSettings();
 
-  // Settings
-  const [provider, setProvider] = useState('OpenRouter');
-  const [openRouterKey, setOpenRouterKey] = useState('');
-  const [openRouterModel, setOpenRouterModel] = useState('google/gemini-2.0-flash-exp:free');
-  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434');
-  const [ollamaModel, setOllamaModel] = useState('llama3');
-  const [groqKey, setGroqKey] = useState('');
-  const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile');
-  const [notionApiKey, setNotionApiKey] = useState('');
-  const [notionDatabaseId, setNotionDatabaseId] = useState('');
+  // Book Verification
+  const {
+    isbn, setIsbn, title, setTitle, author, setAuthor,
+    loading, setLoading, verificationResult, setVerificationResult,
+    error, setError, showIsbn, setShowIsbn
+  } = useBookVerification();
 
-  // Search Enrichment State
-  const [braveApiKey, setBraveApiKey] = useState('');
-  const [enableSearchEnrichment, setEnableSearchEnrichment] = useState(false);
-  const [searchMaxResults, setSearchMaxResults] = useState(5);
-  const [showBraveKey, setShowBraveKey] = useState(false);
-  const [braveKeyValid, setBraveKeyValid] = useState(null);
-  const [validatingBraveKey, setValidatingBraveKey] = useState(false);
-  const [searchSources, setSearchSources] = useState(null); // {brave: [], wikipedia: {}}
-  const [showSearchSources, setShowSearchSources] = useState(false);
-  const [isNotionSharing, setIsNotionSharing] = useState(false);
-  const [availableModels, setAvailableModels] = useState([]);
-  const [iterativeMode, setIterativeMode] = useState(false);
-  const [criticModel, setCriticModel] = useState('same');
-  const [iterativeStats, setIterativeStats] = useState(null); // { iteration: 1, steps: [], status: '' }
-  const [keyValid, setKeyValid] = useState(null); // null, true, false
-  const [keyError, setKeyError] = useState('');
-  const [validatingKey, setValidatingKey] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [backendUp, setBackendUp] = useState(true);
-  const [configLoaded, setConfigLoaded] = useState(false);
-  const [showLibrary, setShowLibrary] = useState(false);
-  const [savedSummaries, setSavedSummaries] = useState([]);
-  const [showIsbn, setShowIsbn] = useState(false);
-  const [history, setHistory] = useState([]);
-  const [copied, setCopied] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [savedId, setSavedId] = useState(null); // Track if current summary is saved
+  // Summary Generation
+  const {
+    summary, setSummary, usageStats, setUsageStats,
+    diversityAnalysis, setDiversityAnalysis, synthesisMetadata, setSynthesisMetadata,
+    summarizing, setSummarizing, streamingStatus, setStreamingStatus,
+    tokensReceived, setTokensReceived, progress, setProgress,
+    abortControllerRef, iterativeStats, setIterativeStats,
+    searchSources, setSearchSources, showSearchSources, setShowSearchSources,
+    sonarCitations, setSonarCitations,
+    isUpdated, setIsUpdated,
+    isSelectionMode, setIsSelectionMode, selectedVariantIds, setSelectedVariantIds
+  } = useSummaryGeneration();
 
-  const [currentBook, setCurrentBook] = useState(null); // Track which book is currently loaded
-  const [currentVariant, setCurrentVariant] = useState(null); // Track active variant
-  const [existingSummary, setExistingSummary] = useState(null); // Proactive duplicate check
+  // Library Management
+  const {
+    showLibrary, setShowLibrary, savedSummaries, setSavedSummaries,
+    currentBook, setCurrentBook, currentVariant, setCurrentVariant,
+    savedId, setSavedId, existingSummary, setExistingSummary,
+    coverEditBook, setCoverEditBook, isCoverModalOpen, setIsCoverModalOpen,
+    isMetadataModalOpen, setIsMetadataModalOpen, metadataEditBook, setMetadataEditBook,
+    metadataTitle, setMetadataTitle, metadataAuthor, setMetadataAuthor,
+    metadataIsbn, setMetadataIsbn, metadataGenre, setMetadataGenre,
+    isSavingMetadata, setIsSavingMetadata,
+    deleteConfirmOpen, setDeleteConfirmOpen, bookToDelete, setBookToDelete,
+    isNotionSharing, setIsNotionSharing,
+    loadLibrary, saveSummary, deleteSavedSummary, deleteBook, updateCover
+  } = useLibraryManagement();
 
-  // Custom Modals State
-  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", onConfirm: null, isDanger: false });
-  const [alertModal, setAlertModal] = useState({ isOpen: false, title: "", message: "" });
-  const [toast, setToast] = useState(null); // { message, type }
+  // History Management
+  const { history, setHistory, showHistory, setShowHistory, copied, setCopied } = useHistory();
 
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [bookToDelete, setBookToDelete] = useState(null);
+  // Elaboration
+  const {
+    selectionContext, setSelectionContext, elaborationChat, setElaborationChat,
+    isElaborating, setIsElaborating, elaborationQuery, setElaborationQuery,
+    showElaborationPanel, setShowElaborationPanel
+  } = useElaboration();
 
-  // Streaming & UI Enhancements
-  const [streamingStatus, setStreamingStatus] = useState('');
-  const [tokensReceived, setTokensReceived] = useState(0);
-  const [highQuality, setHighQuality] = useState(false);
-  const [draftCount, setDraftCount] = useState(3);
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [selectedVariantIds, setSelectedVariantIds] = useState([]);
-  const abortControllerRef = useRef(null);
+  // Note Management
+  const {
+    isNoteReviewOpen, setIsNoteReviewOpen, noteReviewContent, setNoteReviewContent,
+    notes, setNotes, editingNoteId, setEditingNoteId, noteReviewTextareaRef,
+    isRefineModalOpen, setIsRefineModalOpen, refineInstruction, setRefineInstruction,
+    isRefining, setIsRefining, refinedPreview, setRefinedPreview,
+    isRefinementPreviewOpen, setIsRefinementPreviewOpen,
+    saveNote, deleteNote
+  } = useNoteManagement();
 
-  // Visual Feedback State
-  const [isUpdated, setIsUpdated] = useState(false);
+  // UI State
+  const { isStuck, setIsStuck, headerRef, stickySentinelRef, libraryContentRef } = useUIState();
 
-  const [isStuck, setIsStuck] = useState(false);
-  const headerRef = useRef(null);
-  const stickySentinelRef = useRef(null);
-  const libraryContentRef = useRef(null);
-
-  // Cover Edit State
-  const [coverEditBook, setCoverEditBook] = useState(null);
-  const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
-
-  // Elaboration State
-  const [selectionContext, setSelectionContext] = useState(null);
-  const [elaborationChat, setElaborationChat] = useState([]); // Array of {role: 'user'|'ai', content: string}
-  const [isElaborating, setIsElaborating] = useState(false);
-  const [elaborationQuery, setElaborationQuery] = useState("");
-  const [showElaborationPanel, setShowElaborationPanel] = useState(false);
-
-  const [progress, setProgress] = useState(0);
-
-  // Refinement State
-  const [isRefineModalOpen, setIsRefineModalOpen] = useState(false);
-  const [refineInstruction, setRefineInstruction] = useState("");
-  const [isRefining, setIsRefining] = useState(false);
-  const [refinedPreview, setRefinedPreview] = useState(null);
-  const [isRefinementPreviewOpen, setIsRefinementPreviewOpen] = useState(false);
-
-  // Note Review State
-  const [isNoteReviewOpen, setIsNoteReviewOpen] = useState(false);
-  const [noteReviewContent, setNoteReviewContent] = useState("");
-  const [notes, setNotes] = useState([]); // Dedicated notes state
-  const [editingNoteId, setEditingNoteId] = useState(null); // Track note being edited
-  const noteReviewTextareaRef = useRef(null);
+  // ========== End Custom Hooks ==========
 
   // Editor Toolbar Handler
   const handleFormat = (command) => {
-    const textarea = noteReviewTextareaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = noteReviewContent;
-    const before = text.substring(0, start);
-    const selection = text.substring(start, end);
-    const after = text.substring(end);
-
-    let newText = text;
-    let newCursorPos = end;
-
-    switch (command) {
-      case 'bold':
-        newText = `${before}**${selection}**${after}`;
-        newCursorPos = end + 4;
-        break;
-      case 'italic':
-        newText = `${before}*${selection}*${after}`;
-        newCursorPos = end + 2;
-        break;
-      case 'h2':
-        newText = `${before}\n## ${selection}${after}`;
-        newCursorPos = end + 4;
-        break;
-      case 'quote':
-        newText = `${before}\n> ${selection}${after}`;
-        newCursorPos = end + 3;
-        break;
-      case 'list':
-        newText = `${before}\n- ${selection}${after}`;
-        newCursorPos = end + 3;
-        break;
-      case 'code':
-        newText = `${before}\`${selection}\`${after}`;
-        newCursorPos = end + 2;
-        break;
-      case 'hr':
-        newText = `${before}\n\n---\n\n${after}`;
-        newCursorPos = start + 5;
-        break;
-      default:
-        return;
-    }
-
-    setNoteReviewContent(newText);
-
-    // Defer focus restoration
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-    }, 0);
+    applyMarkdownFormat(command, noteReviewTextareaRef.current, noteReviewContent, setNoteReviewContent);
   };
 
   // Selection Handler
@@ -658,7 +184,7 @@ function App() {
     setIsElaborating(true);
 
     try {
-      const res = await axios.post(`${API_BASE_URL}/elaborate`, {
+      const res = await api.elaborate({
         selection: selectionContext.text,
         query: currentQuery,
         context: summary,
@@ -710,28 +236,9 @@ function App() {
       "Apakah Anda yakin ingin menghapus catatan ini secara permanen?",
       async () => {
         try {
-          await axios.delete(`${API_BASE_URL}/saved/${savedId}/notes/${noteId}`);
-          setNotes(prev => prev.filter(n => n.id !== noteId));
-          // Update local library state
-          setSavedSummaries(prev => prev.map(book => {
-            if (book.summaries.some(s => s.id === savedId)) {
-              return {
-                ...book,
-                summaries: book.summaries.map(s =>
-                  s.id === savedId ? {
-                    ...s,
-                    notes: s.notes.filter(n => n.id !== noteId),
-                    timestamp: new Date().toISOString()
-                  } : s
-                ),
-                last_updated: new Date().toISOString()
-              };
-            }
-            return book;
-          }));
+          await deleteNote(savedId, noteId);
           showToast("Catatan dihapus", "success");
         } catch (err) {
-          console.error("Failed to delete note", err);
           showToast("Gagal menghapus catatan", "error");
         }
       },
@@ -746,46 +253,9 @@ function App() {
     // Persistent storage integration (New Architecture: Dedicated Notes)
     if (savedId) {
       try {
-        let newNote;
-        if (editingNoteId) {
-          // Update existing note
-          const res = await axios.put(`${API_BASE_URL}/saved/${savedId}/notes/${editingNoteId}`, {
-            content_markdown: markdownContent
-          });
-          newNote = res.data;
-          setNotes(prev => prev.map(n => n.id === editingNoteId ? newNote : n));
-        } else {
-          // Create new note
-          const res = await axios.post(`${API_BASE_URL}/saved/${savedId}/notes`, {
-            ref_text: selectionContext?.text || "Manual Note",
-            content_markdown: markdownContent
-          });
-          newNote = res.data;
-          setNotes(prev => [...prev, newNote]);
-        }
-
-        // Also update the local savedSummaries list to stay in sync
-        setSavedSummaries(prev => prev.map(book => {
-          if (book.summaries.some(s => s.id === savedId)) {
-            return {
-              ...book,
-              summaries: book.summaries.map(s =>
-                s.id === savedId ? {
-                  ...s,
-                  notes: editingNoteId
-                    ? s.notes.map(n => n.id === editingNoteId ? newNote : n)
-                    : [...(s.notes || []), newNote],
-                  timestamp: new Date().toISOString()
-                } : s
-              ),
-              last_updated: new Date().toISOString()
-            };
-          }
-          return book;
-        }));
+        await saveNote(savedId, markdownContent, selectionContext?.text);
         showToast(editingNoteId ? "Catatan diperbarui" : "Diskusi berhasil diarsipkan ke Lampiran", "success");
       } catch (err) {
-        console.error("Failed to save note", err);
         showToast("Gagal menyimpan catatan ke backend", "error");
       }
     } else {
@@ -793,12 +263,13 @@ function App() {
       // or show a warning. Let's append to local summary as a fallback.
       const newSummary = (summary || "").trim() + "\n\n---\n\n" + markdownContent;
       setSummary(newSummary);
-      showToast("Diskusi ditambahkan ke ringkuman (Belum diarsipkan)", "info");
-    }
+      showToast("Diskusi ditambahkan ke ringkasan (Belum diarsipkan)", "info");
 
-    setIsNoteReviewOpen(false);
-    setNoteReviewContent("");
-    setEditingNoteId(null);
+      // Close editor since saveNote hook would usually do it, but we are in fallback
+      setIsNoteReviewOpen(false);
+      setNoteReviewContent("");
+      setEditingNoteId(null);
+    }
 
     // Cleanup Elaboration
     setShowElaborationPanel(false);
@@ -808,55 +279,12 @@ function App() {
     window.getSelection()?.removeAllRanges();
   };
 
-  const showAlert = (title, message) => {
-    setAlertModal({ isOpen: true, title, message });
-  };
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-  };
-
-  const closeAlert = () => {
-    setAlertModal({ ...alertModal, isOpen: false });
-  };
-
-  const showConfirm = (title, message, onConfirm, isDanger = false) => {
-    setConfirmModal({ isOpen: true, title, message, onConfirm, isDanger });
-  };
-
-  const closeConfirm = () => {
-    setConfirmModal({ ...confirmModal, isOpen: false });
-  };
-
-  const handleUpdateCover = async (newUrl) => {
-    if (!coverEditBook) return;
+  const handleUpdateCover = async (bookId, newUrl) => {
     try {
-      const response = await axios.put(`${API_BASE_URL}/books/${coverEditBook.id}/cover`, { image_url: newUrl });
-      const serverPath = response.data; // Backend returns the new local path string
-
-      // Update local summaries list immediately
-      setSavedSummaries(prev => prev.map(book => {
-        if (book.id === coverEditBook.id) {
-          return { ...book, image_url: serverPath, last_updated: new Date().toISOString() };
-        }
-        return book;
-      }));
-
-      // Update current book if it's the one we're looking at
-      if (currentBook && currentBook.id === coverEditBook.id) {
-        setCurrentBook(prev => ({
-          ...prev,
-          image_url: serverPath,
-          last_updated: new Date().toISOString()
-        }));
-      }
-
-      setIsCoverModalOpen(false);
-      setCoverEditBook(null);
-      showToast("Sampul berhasil diperbarui");
+      await updateCover(bookId, newUrl);
+      showToast("Sampul diperbarui", "success");
     } catch (err) {
-      console.error("Failed to update cover", err);
-      showAlert("Gagal", "Gagal memperbarui sampul buku.");
+      showAlert("Error", "Gagal memperbarui sampul.");
     }
   };
 
@@ -871,53 +299,7 @@ function App() {
       }
     }
 
-    const checkBackendAndLoadConfig = async () => {
-      try {
-        await axios.get(`${API_BASE_URL.replace('/api', '')}/`);
-        setBackendUp(true);
-
-        // Load Config
-        const configRes = await axios.get(`${API_BASE_URL}/config`);
-        if (configRes.data) {
-          if (configRes.data.provider) setProvider(configRes.data.provider);
-
-          if (configRes.data.openrouter_key) {
-            setOpenRouterKey(configRes.data.openrouter_key);
-            // We'll validate below if the provider is OpenRouter
-          }
-          if (configRes.data.openrouter_model) setOpenRouterModel(configRes.data.openrouter_model);
-
-          if (configRes.data.ollama_base_url) setOllamaBaseUrl(configRes.data.ollama_base_url);
-          if (configRes.data.ollama_model) setOllamaModel(configRes.data.ollama_model);
-
-          if (configRes.data.groq_key) setGroqKey(configRes.data.groq_key);
-          if (configRes.data.groq_model) setGroqModel(configRes.data.groq_model);
-
-          if (configRes.data.notion_api_key) setNotionApiKey(configRes.data.notion_api_key);
-          if (configRes.data.notion_database_id) setNotionDatabaseId(configRes.data.notion_database_id);
-
-          // Load Search Enrichment Config
-          if (configRes.data.brave_api_key) setBraveApiKey(configRes.data.brave_api_key);
-          if (configRes.data.enable_search_enrichment !== undefined) setEnableSearchEnrichment(configRes.data.enable_search_enrichment);
-          if (configRes.data.search_max_results) setSearchMaxResults(configRes.data.search_max_results);
-
-          // Initial model fetch based on active provider
-          const activeProvider = configRes.data.provider || 'OpenRouter';
-          if (activeProvider === 'OpenRouter' && configRes.data.openrouter_key) {
-            validateApiKey(configRes.data.openrouter_key, false, 'OpenRouter');
-          } else if (activeProvider === 'Groq' && configRes.data.groq_key) {
-            validateApiKey(configRes.data.groq_key, false, 'Groq');
-          } else if (activeProvider === 'Ollama') {
-            validateApiKey(null, false, 'Ollama', configRes.data.ollama_base_url || 'http://localhost:11434');
-          }
-
-          setConfigLoaded(true);
-        }
-      } catch (err) {
-        setBackendUp(false);
-      }
-    };
-    checkBackendAndLoadConfig();
+    loadConfiguration();
 
     // IntersectionObserver for sticky header detection
     const hasSummary = !!summary;
@@ -944,16 +326,6 @@ function App() {
     };
   }, [!!summary]); // Only re-run when summary appears or disappears
 
-  // Metadata Edit Modal State
-  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
-  const [metadataEditBook, setMetadataEditBook] = useState(null);
-  const [metadataTitle, setMetadataTitle] = useState("");
-  const [metadataAuthor, setMetadataAuthor] = useState("");
-  const [metadataIsbn, setMetadataIsbn] = useState("");
-  const [metadataGenre, setMetadataGenre] = useState("");
-  const [isSavingMetadata, setIsSavingMetadata] = useState(false);
-  const [summarizing, setSummarizing] = useState(false);
-
   // Load saved summaries when opening library
   useEffect(() => {
     if (showLibrary && libraryContentRef.current) {
@@ -961,19 +333,8 @@ function App() {
     }
   }, [savedSummaries, showLibrary]);
 
-  const loadSavedSummaries = async () => {
-    try {
-      const res = await axios.get(`${API_BASE_URL}/saved`);
-      // Sort by last_updated descending (newest first)
-      const sorted = res.data.sort((a, b) => new Date(b.last_updated) - new Date(a.last_updated));
-      setSavedSummaries(sorted);
-    } catch (err) {
-      console.error("Failed to load saved summaries", err);
-    }
-  };
-
   useEffect(() => {
-    loadSavedSummaries();
+    loadLibrary();
   }, []);
 
   const handleSaveSummary = async () => {
@@ -992,7 +353,7 @@ function App() {
     }
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/save`, {
+      await saveSummary({
         title: title || currentBook?.title || verificationResult.sources[0]?.title || "Unknown Title",
         author: author || currentBook?.author || verificationResult.sources[0]?.author || "Unknown Author",
         summary_content: summary,
@@ -1004,12 +365,7 @@ function App() {
           image_url: imageUrl
         }
       });
-
-      const newVariant = response.data;
-      setSavedId(newVariant.id);
-      setCurrentVariant(newVariant);
       showToast("Intelligence Brief berhasil disimpan");
-      loadSavedSummaries();
     } catch (err) {
       showAlert("Gagal Menyimpan", "Terjadi kesalahan saat menyimpan rangkuman.");
     }
@@ -1031,32 +387,16 @@ function App() {
 
   const performDeleteCurrent = async (id) => {
     try {
-      await axios.delete(`${API_BASE_URL}/saved/${id}`);
+      const result = await deleteSavedSummary(id);
 
-      // Fetch updated list to check current book status
-      const res = await axios.get(`${API_BASE_URL}/saved`);
-      const sorted = res.data.sort((a, b) => new Date(b.last_updated) - new Date(a.last_updated));
-      setSavedSummaries(sorted);
-
-      if (currentBook) {
-        // Find this book in the updated list
-        const updatedBook = sorted.find(b => b.id === currentBook.id);
-
-        if (updatedBook && updatedBook.summaries && updatedBook.summaries.length > 0) {
-          // Stay on book, load the first available summary variant
-          setCurrentBook(updatedBook);
-          loadVariant(updatedBook.summaries[0]);
-        } else {
-          // No more summaries for this book, return to home
-          handleReset();
-        }
-      } else {
-        setSavedId(null);
+      if (result.status === 'updated') {
+        loadVariant(result.book.summaries[0]);
+      } else if (result.status === 'empty' || result.status === 'deleted') {
+        handleReset();
       }
 
       showToast("Intelligence Brief dihapus dari arsip.", "success");
     } catch (err) {
-      console.error("Delete failed:", err);
       showAlert("Error", "Gagal menghapus rangkuman.");
     }
   };
@@ -1071,18 +411,13 @@ function App() {
   const confirmDeleteBook = async () => {
     if (!bookToDelete) return;
     try {
-      await axios.delete(`${API_BASE_URL}/books/${bookToDelete.id}`);
-      loadSavedSummaries();
+      await deleteBook(bookToDelete.id);
       if (currentBook && currentBook.id === bookToDelete.id) {
         handleReset();
       }
       showAlert("Terhapus", `Buku "${bookToDelete.title}" dihapus dari arsip.`);
     } catch (err) {
-      console.error("Failed to delete book", err);
       showAlert("Error", "Gagal menghapus buku.");
-    } finally {
-      setDeleteConfirmOpen(false);
-      setBookToDelete(null);
     }
   }
 
@@ -1127,21 +462,15 @@ function App() {
   const validateApiKey = async (key, shouldSave = true, targetProvider = provider, baseUrl = ollamaBaseUrl) => {
     if (targetProvider === 'OpenRouter' && !key) { setKeyValid(null); setKeyError(''); return; }
 
-    setValidatingKey(true);
-    setKeyValid(null);
-    setKeyError('');
-
     try {
-      const response = await axios.post(`${API_BASE_URL}/models`, {
-        provider: targetProvider,
-        api_key: key,
-        base_url: baseUrl
-      });
-      if (response.data.valid) {
+      setValidatingKey(true);
+      const res = await api.validateApiKey(targetProvider, key, baseUrl);
+      if (res.data.valid) {
         setKeyValid(true);
-        setAvailableModels(response.data.models);
+        setKeyError('');
+        setAvailableModels(res.data.models); // Update available models
         if (shouldSave) {
-          saveConfig({
+          saveConfiguration({ // Use saveConfiguration
             provider: targetProvider,
             openrouter_key: targetProvider === 'OpenRouter' ? key : openRouterKey,
             groq_key: targetProvider === 'Groq' ? key : groqKey,
@@ -1150,6 +479,9 @@ function App() {
             notion_database_id: notionDatabaseId
           });
         }
+      } else {
+        setKeyValid(false);
+        setKeyError(res.data.error || 'API Key tidak valid.');
       }
     } catch (err) {
       setKeyValid(false);
@@ -1164,11 +496,14 @@ function App() {
     }
   };
 
-  const saveConfig = async (updates) => {
+  const saveConfiguration = async (updates) => {
     try {
-      await axios.post(`${API_BASE_URL}/config`, updates);
+      await api.saveConfig(updates);
+      showToast("Konfigurasi disimpan", "success");
+      // setShowSettings(false); // This might be handled elsewhere
     } catch (err) {
       console.error("Failed to save config", err);
+      showAlert("Error", "Gagal menyimpan konfigurasi.");
     }
   };
 
@@ -1176,13 +511,13 @@ function App() {
     const newModel = e.target.value;
     if (provider === 'OpenRouter') {
       setOpenRouterModel(newModel);
-      saveConfig({ openrouter_model: newModel });
+      saveConfiguration({ openrouter_model: newModel });
     } else if (provider === 'Groq') {
       setGroqModel(newModel);
-      saveConfig({ groq_model: newModel });
+      saveConfiguration({ groq_model: newModel });
     } else {
       setOllamaModel(newModel);
-      saveConfig({ ollama_model: newModel });
+      saveConfiguration({ ollama_model: newModel });
     }
   };
 
@@ -1193,6 +528,7 @@ function App() {
     setSummary(null);
     setError(null);
     setCurrentBook(null); // Reset current book context on new search
+    setIterativeStats(null); // Clear iterative progress on new search
 
     // Add to history
     if (isbn || title || author) {
@@ -1200,7 +536,7 @@ function App() {
     }
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/verify`, {
+      const response = await api.verifyBook({
         isbn: isbn || null,
         title: title || null,
         author: author || null
@@ -1271,6 +607,7 @@ function App() {
       setTokensReceived(0);
       setProgress(0);
       setSearchSources(null);
+      setSonarCitations(null);
       setShowSearchSources(false);
       setIterativeStats(null); // Reset stats
     }
@@ -1279,27 +616,20 @@ function App() {
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch(`${API_BASE_URL}/summarize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        signal: abortControllerRef.current.signal,
-        body: JSON.stringify({
-          metadata: verificationResult.sources,
-          provider: overrideConfig ? overrideConfig.provider : provider,
-          api_key: overrideConfig
-            ? (overrideConfig.provider === 'OpenRouter' ? openRouterKey : overrideConfig.provider === 'Groq' ? groqKey : null)
-            : (provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : null)),
-          model: overrideConfig ? overrideConfig.model : (provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)),
-          base_url: overrideConfig ? overrideConfig.base_url : (provider === 'Ollama' ? ollamaBaseUrl : null),
-          partial_content: isResume ? summary : null,
-          enhance_quality: highQuality,
-          draft_count: highQuality ? draftCount : 1,
-          iterative_mode: iterativeMode,
-          critic_model: criticModel === 'same' ? null : criticModel
-        }),
-      });
+      const response = await api.streamSummarize({
+        metadata: verificationResult.sources,
+        provider: overrideConfig ? overrideConfig.provider : provider,
+        api_key: overrideConfig
+          ? (overrideConfig.provider === 'OpenRouter' ? openRouterKey : overrideConfig.provider === 'Groq' ? groqKey : null)
+          : (provider === 'OpenRouter' ? openRouterKey : (provider === 'Groq' ? groqKey : null)),
+        model: overrideConfig ? overrideConfig.model : (provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)),
+        base_url: overrideConfig ? overrideConfig.base_url : (provider === 'Ollama' ? ollamaBaseUrl : null),
+        partial_content: isResume ? summary : null,
+        enhance_quality: highQuality,
+        draft_count: highQuality ? draftCount : 1,
+        iterative_mode: iterativeMode,
+        critic_model: criticModel === 'same' ? null : criticModel
+      }, abortControllerRef.current.signal);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -1366,6 +696,10 @@ function App() {
                 if (data.search_sources) {
                   setSearchSources(data.search_sources);
                 }
+                // Parse Perplexity Sonar citations if available
+                if (data.sonar_citations) {
+                  setSonarCitations(data.sonar_citations);
+                }
               }
 
               // Iterative Mode Events
@@ -1430,6 +764,7 @@ function App() {
     setSummary(null);
     setUsageStats(null);
     setSavedId(null);
+    setIterativeStats(null); // Clear iterative progress on new synthesis
     setNotes([]); // Reset notes for synthesis
     setCurrentVariant(null);
     setTokensReceived(0);
@@ -1437,18 +772,11 @@ function App() {
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch(`${API_BASE_URL}/synthesize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        signal: abortControllerRef.current.signal,
-        body: JSON.stringify({
-          summary_ids: selectedVariantIds,
-          provider: provider,
-          model: provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)
-        }),
-      });
+      const response = await api.streamSynthesize({
+        summary_ids: selectedVariantIds,
+        provider: provider,
+        model: provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)
+      }, abortControllerRef.current.signal);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -1647,6 +975,7 @@ function App() {
     setShowSettings(false);
     setShowLibrary(false);
     setShowHistory(false);
+    setIterativeStats(null); // Clear iterative progress on full reset
     setHighQuality(false);
     setIsSelectionMode(false);
     setSelectedVariantIds([]);
@@ -1666,7 +995,7 @@ function App() {
     setIsSavingMetadata(true);
 
     try {
-      const response = await axios.put(`${API_BASE_URL}/books/${metadataEditBook.id}/metadata`, {
+      const response = await api.updateMetadata(metadataEditBook.id, {
         title: metadataTitle,
         author: metadataAuthor,
         isbn: metadataIsbn,
@@ -1697,7 +1026,7 @@ function App() {
 
     setIsNotionSharing(true);
     try {
-      const res = await axios.post(`${API_BASE_URL}/share/notion`, {
+      const res = await api.shareToNotion({
         title: currentBook?.title || title || verificationResult?.sources[0]?.title || "Unknown Title",
         author: currentBook?.author || author || verificationResult?.sources[0]?.author || "Unknown Author",
         summary_content: summary,
@@ -1762,27 +1091,7 @@ function App() {
     <>
       <div className="container animate-fade-in">
         {/* Backend Status Banner */}
-        {!backendUp && (
-          <div style={{
-            background: 'rgba(239, 68, 68, 0.1)',
-            color: 'var(--error)',
-            padding: '1rem',
-            borderRadius: '6px',
-            border: '1px solid rgba(239, 68, 68, 0.2)',
-            marginBottom: '2rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <AlertCircle size={20} style={{ marginRight: '10px' }} />
-            <div>
-              <strong>Backend Tidak Terdeteksi!</strong>
-              <div style={{ fontSize: '0.9rem', marginTop: '4px', opacity: 0.8 }}>
-                Silakan jalankan file <code>run_app.bat</code>.
-              </div>
-            </div>
-          </div>
-        )}
+        <BackendStatusBanner backendUp={backendUp} />
 
         {/* Header */}
         <header style={{
@@ -1829,7 +1138,7 @@ function App() {
                   setShowHistory(false);
                 }}
                 style={{ background: 'none', border: 'none', color: showLibrary ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
-                title="Archived Intel (Saved)"
+                title="Archived (Saved)"
               >
                 <BookOpen size={22} />
               </button>
@@ -1883,885 +1192,121 @@ function App() {
           </div>
         </header>
 
-        {/* Settings Modal/Panel */}
-        {showSettings && (
-          <div className="glass-card animate-fade-in" style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: '90%',
-            maxWidth: '600px',
-            maxHeight: '85vh',
-            overflowY: 'auto',
-            zIndex: 1000,
-            padding: '1.5rem',
-          }}>
+        {/* Settings Panel */}
+        <SettingsPanel
+          showSettings={showSettings}
+          onClose={() => setShowSettings(false)}
+          provider={provider}
+          setProvider={setProvider}
+          openRouterKey={openRouterKey}
+          setOpenRouterKey={setOpenRouterKey}
+          openRouterModel={openRouterModel}
+          setOpenRouterModel={setOpenRouterModel}
+          groqKey={groqKey}
+          setGroqKey={setGroqKey}
+          groqModel={groqModel}
+          setGroqModel={setGroqModel}
+          ollamaBaseUrl={ollamaBaseUrl}
+          setOllamaBaseUrl={setOllamaBaseUrl}
+          ollamaModel={ollamaModel}
+          setOllamaModel={setOllamaModel}
+          notionApiKey={notionApiKey}
+          setNotionApiKey={setNotionApiKey}
+          notionDatabaseId={notionDatabaseId}
+          setNotionDatabaseId={setNotionDatabaseId}
+          braveApiKey={braveApiKey}
+          setBraveApiKey={setBraveApiKey}
+          braveKeyValid={braveKeyValid}
+          setBraveKeyValid={setBraveKeyValid}
+          validatingBraveKey={validatingBraveKey}
+          setValidatingBraveKey={setValidatingBraveKey}
+          showBraveKey={showBraveKey}
+          setShowBraveKey={setShowBraveKey}
+          keyValid={keyValid}
+          keyError={keyError}
+          validatingKey={validatingKey}
+          showApiKey={showApiKey}
+          setShowApiKey={setShowApiKey}
+          availableModels={availableModels}
+          validateApiKey={validateApiKey}
+          saveConfiguration={saveConfiguration}
+          showToast={showToast}
+          showAlert={showAlert}
+        />
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Settings size={18} /> Konfigurasi AI
-              </h3>
-              <button onClick={() => setShowSettings(false)} className="icon-btn"><X size={18} /></button>
-            </div>
-
-
-
-            <div style={{ marginTop: '1rem' }}>
-
-              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-                <button
-                  onClick={() => { setProvider('OpenRouter'); validateApiKey(openRouterKey, true, 'OpenRouter'); }}
-                  style={{
-                    background: 'none', border: 'none', color: provider === 'OpenRouter' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                    fontWeight: provider === 'OpenRouter' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
-                    borderBottom: provider === 'OpenRouter' ? '2px solid var(--accent-color)' : 'none'
-                  }}
-                >
-                  OpenRouter
-                </button>
-                <button
-                  onClick={() => { setProvider('Groq'); validateApiKey(groqKey, true, 'Groq'); }}
-                  style={{
-                    background: 'none', border: 'none', color: provider === 'Groq' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                    fontWeight: provider === 'Groq' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
-                    borderBottom: provider === 'Groq' ? '2px solid var(--accent-color)' : 'none'
-                  }}
-                >
-                  Groq
-                </button>
-                <button
-                  onClick={() => { setProvider('Ollama'); validateApiKey(null, true, 'Ollama', ollamaBaseUrl); }}
-                  style={{
-                    background: 'none', border: 'none', color: provider === 'Ollama' ? 'var(--accent-color)' : 'var(--text-secondary)',
-                    fontWeight: provider === 'Ollama' ? 'bold' : 'normal', cursor: 'pointer', paddingBottom: '0.5rem',
-                    borderBottom: provider === 'Ollama' ? '2px solid var(--accent-color)' : 'none'
-                  }}
-                >
-                  Ollama (Local)
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {provider === 'OpenRouter' ? (
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      OpenRouter API Key
-                    </label>
-                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-                      <div style={{ position: 'relative', flex: 1 }}>
-                        <input
-                          type={showApiKey ? "text" : "password"}
-                          value={openRouterKey}
-                          onChange={(e) => setOpenRouterKey(e.target.value)}
-                          className="input-field"
-                          placeholder="sk-or-v1-..."
-                          style={{
-                            paddingRight: '3rem',
-                            marginBottom: 0,
-                            borderColor: keyValid === true ? 'var(--success)' : (keyValid === false ? 'var(--error)' : 'var(--border-color)')
-                          }}
-                        />
-                        <div style={{
-                          position: 'absolute', right: '0.5rem', top: '0', height: '100%',
-                          display: 'flex', alignItems: 'center', pointerEvents: 'none'
-                        }}>
-                          <button
-                            type="button"
-                            onClick={() => setShowApiKey(!showApiKey)}
-                            style={{
-                              background: 'none', border: 'none', color: 'var(--text-secondary)',
-                              cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
-                            }}
-                          >
-                            {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                          </button>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => validateApiKey(openRouterKey, true)}
-                        disabled={validatingKey || !openRouterKey}
-                        className="btn-secondary"
-                        style={{ height: '42px', minWidth: '42px' }}
-                      >
-                        {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                ) : provider === 'Groq' ? (
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      Groq API Key
-                    </label>
-                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-                      <div style={{ position: 'relative', flex: 1 }}>
-                        <input
-                          type={showApiKey ? "text" : "password"}
-                          value={groqKey}
-                          onChange={(e) => setGroqKey(e.target.value)}
-                          className="input-field"
-                          placeholder="gsk_..."
-                          style={{
-                            paddingRight: '3rem',
-                            marginBottom: 0,
-                            borderColor: keyValid === true ? 'var(--success)' : (keyValid === false ? 'var(--error)' : 'var(--border-color)')
-                          }}
-                        />
-                        <div style={{
-                          position: 'absolute', right: '0.5rem', top: '0', height: '100%',
-                          display: 'flex', alignItems: 'center', pointerEvents: 'none'
-                        }}>
-                          <button
-                            type="button"
-                            onClick={() => setShowApiKey(!showApiKey)}
-                            style={{
-                              background: 'none', border: 'none', color: 'var(--text-secondary)',
-                              cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
-                            }}
-                          >
-                            {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                          </button>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => validateApiKey(groqKey, true, 'Groq')}
-                        disabled={validatingKey || !groqKey}
-                        className="btn-secondary"
-                        style={{ height: '42px', minWidth: '42px' }}
-                      >
-                        {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      Ollama Base URL
-                    </label>
-                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-                      <input
-                        type="text"
-                        value={ollamaBaseUrl}
-                        onChange={(e) => setOllamaBaseUrl(e.target.value)}
-                        className="input-field"
-                        placeholder="http://localhost:11434"
-                        style={{ marginBottom: 0, flex: 1 }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => validateApiKey(null, true, 'Ollama', ollamaBaseUrl)}
-                        disabled={validatingKey}
-                        className="btn-secondary"
-                        style={{ height: '42px', minWidth: '42px' }}
-                      >
-                        {validatingKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                    Default AI Model ({provider})
-                  </label>
-                  <SearchableSelect
-                    options={availableModels}
-                    value={provider === 'OpenRouter' ? openRouterModel : (provider === 'Groq' ? groqModel : ollamaModel)}
-                    onChange={(val) => {
-                      if (provider === 'OpenRouter') {
-                        setOpenRouterModel(val);
-                        saveConfig({ openrouter_model: val });
-                      } else if (provider === 'Groq') {
-                        setGroqModel(val);
-                        saveConfig({ groq_model: val });
-                      } else {
-                        setOllamaModel(val);
-                        saveConfig({ ollama_model: val });
-                      }
-                    }}
-                    placeholder="Pilih model..."
-                  />
-                </div>
-
-                <div style={{ marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Share2 size={18} color="var(--accent-color)" />
-                    Konfigurasi Notion
-                  </h4>
-                  <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        Notion API Key
-                      </label>
-                      <input
-                        type="password"
-                        value={notionApiKey}
-                        onChange={(e) => {
-                          setNotionApiKey(e.target.value);
-                          saveConfig({ notion_api_key: e.target.value });
-                        }}
-                        className="input-field"
-                        placeholder="secret_..."
-                        style={{ marginBottom: 0 }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        Database ID
-                      </label>
-                      <input
-                        type="text"
-                        value={notionDatabaseId}
-                        onChange={(e) => {
-                          setNotionDatabaseId(e.target.value);
-                          saveConfig({ notion_database_id: e.target.value });
-                        }}
-                        className="input-field"
-                        placeholder="32 chars ID"
-                        style={{ marginBottom: 0 }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Search size={18} color="var(--accent-color)" />
-                    Search Configuration
-                  </h4>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                      Brave Search API Key
-                    </label>
-                    <div style={{ display: 'flex', gap: '0.75rem' }}>
-                      <div style={{ position: 'relative', flex: 1 }}>
-                        <input
-                          type={showBraveKey ? "text" : "password"}
-                          value={braveApiKey}
-                          onChange={(e) => {
-                            setBraveApiKey(e.target.value);
-                            saveConfig({ brave_api_key: e.target.value });
-                          }}
-                          className="input-field"
-                          placeholder="BSA..."
-                          style={{
-                            paddingRight: '3rem',
-                            marginBottom: 0,
-                            borderColor: braveKeyValid === true ? 'var(--success)' : (braveKeyValid === false ? 'var(--error)' : 'var(--border-color)')
-                          }}
-                        />
-                        <div style={{
-                          position: 'absolute', right: '0.5rem', top: '0', height: '100%',
-                          display: 'flex', alignItems: 'center', pointerEvents: 'none'
-                        }}>
-                          <button
-                            type="button"
-                            onClick={() => setShowBraveKey(!showBraveKey)}
-                            style={{
-                              background: 'none', border: 'none', color: 'var(--text-secondary)',
-                              cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', pointerEvents: 'auto'
-                            }}
-                          >
-                            {showBraveKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                          </button>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!braveApiKey) return;
-                          setValidatingBraveKey(true);
-                          try {
-                            const res = await axios.post(`${API_BASE_URL}/search/test`, { brave_api_key: braveApiKey });
-                            if (res.data.valid) {
-                              setBraveKeyValid(true);
-                              showToast('Brave API key valid!', 'success');
-                            }
-                          } catch (err) {
-                            setBraveKeyValid(false);
-                            showAlert('Invalid Key', err.response?.data?.detail || 'Brave API key tidak valid');
-                          } finally {
-                            setValidatingBraveKey(false);
-                          }
-                        }}
-                        disabled={validatingBraveKey || !braveApiKey}
-                        className="btn-secondary"
-                        style={{ height: '42px', minWidth: '42px' }}
-                        title="Test Brave API Key"
-                      >
-                        {validatingBraveKey ? <span className="spinner"></span> : <RefreshCw size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+        {/* Library Sidebar */}
+        <LibrarySidebar
+          showLibrary={showLibrary}
+          onClose={() => setShowLibrary(false)}
+          savedSummaries={savedSummaries}
+          libraryContentRef={libraryContentRef}
+          onLoadBook={loadFromLibrary}
+          onDeleteBook={handleDeleteBook}
+          onEditCover={(book) => {
+            setCoverEditBook(book);
+            setIsCoverModalOpen(true);
+          }}
+          onEditMetadata={(book) => {
+            setMetadataEditBook(book);
+            setMetadataTitle(book.title);
+            setMetadataAuthor(book.author);
+            setMetadataIsbn(book.isbn || "");
+            setMetadataGenre(book.genre || "");
+            setIsMetadataModalOpen(true);
+          }}
+          API_BASE_URL={API_BASE_URL}
+        />
 
 
-                <div style={{
-                  marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)',
-                  display: 'flex', justifyContent: 'flex-end'
-                }}>
-                  {keyError && <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginRight: 'auto' }}>{keyError}</p>}
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, fontStyle: 'italic' }}>
-                    Pengaturan disimpan secara otomatis.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Library Card */}
-        {showLibrary && (
-          <div className="glass-card animate-fade-in" style={{
-            marginBottom: '2rem',
-            border: '1px solid var(--border-color)',
-            padding: 0,
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', fontSize: '1.25rem' }}>
-                <BookOpen size={20} style={{ marginRight: '10px', color: 'var(--accent-color)' }} />
-                Archived Intel
-              </h3>
-              <button
-                onClick={() => setShowLibrary(false)}
-                className="btn-secondary"
-                style={{ padding: '0.25rem', minWidth: 'auto', border: 'none', background: 'none' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div
-              id="library-content"
-              ref={libraryContentRef}
-              className="custom-scrollbar"
-              style={{ maxHeight: 'none', padding: '1.5rem' }}
-            >
-              {savedSummaries.length === 0 ? (
-                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
-                  Belum ada brief tersimpan.
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1.5rem' }}>
-                  {savedSummaries.map((book) => (
-                    <div key={book.id} className="glass-card" style={{ padding: '0', cursor: 'pointer', transition: 'all 0.2s', border: '1px solid var(--border-color)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={() => loadFromLibrary(book)}>
-                      <div style={{
-                        width: '100%', height: '260px', backgroundColor: 'var(--bg-secondary)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        overflow: 'hidden', flexShrink: 0, position: 'relative'
-                      }}>
-                        {book.image_url ? (
-                          <img
-                            src={getImageUrl(book.image_url, book.last_updated)}
-                            alt={book.title}
-                            className="sharp-image"
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            onError={(e) => e.target.style.display = 'none'}
-                          />
-                        ) : (
-                          <Book size={48} color="var(--text-secondary)" opacity={0.3} />
-                        )}
-
-                        <div className="card-overlay" style={{
-                          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                          background: 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 40%, rgba(0,0,0,0.6) 100%)',
-                          opacity: 1, transition: 'opacity 0.2s',
-                        }}>
-                          <div
-                            className="cover-edit-btn"
-                            title="Ganti Cover"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCoverEditBook(book);
-                              setIsCoverModalOpen(true);
-                            }}
-                            style={{
-                              position: 'absolute', top: '8px', right: '8px',
-                              background: 'rgba(0,0,0,0.6)', borderRadius: '50%',
-                              width: '32px', height: '32px', display: 'flex',
-                              alignItems: 'center', justifyContent: 'center', color: 'white',
-                              zIndex: 10, backdropFilter: 'blur(4px)'
-                            }}
-                          >
-                            <Settings size={16} />
-                          </div>
-
-                          <div
-                            className="metadata-edit-btn"
-                            title="Edit Info Buku"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMetadataEditBook(book);
-                              setMetadataTitle(book.title);
-                              setMetadataAuthor(book.author);
-                              setMetadataIsbn(book.isbn || "");
-                              setMetadataGenre(book.genre || "");
-                              setIsMetadataModalOpen(true);
-                            }}
-                            style={{
-                              position: 'absolute', top: '8px', left: '8px',
-                              background: 'rgba(0,0,0,0.6)', borderRadius: '50%',
-                              width: '32px', height: '32px', display: 'flex',
-                              alignItems: 'center', justifyContent: 'center', color: 'white',
-                              zIndex: 10, backdropFilter: 'blur(4px)'
-                            }}
-                          >
-                            <PenTool size={16} />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ padding: '0.85rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                        <h4 style={{
-                          margin: '0 0 0.35rem 0', color: 'var(--text-primary)',
-                          fontSize: '0.95rem', fontWeight: '600',
-                          overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box',
-                          WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '2.5rem'
-                        }} title={book.title}>
-                          {book.title}
-                        </h4>
-                        <p style={{ margin: '0 0 0.75rem 0', color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{book.author}</p>
-
-                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '0.7rem' }}>
-                            {book.summaries.length} Artifacts
-                          </span>
-                          <button
-                            onClick={(e) => handleDeleteBook(book.id, e)}
-                            style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '0.75rem', opacity: 0.7 }}
-                          >
-                            <Trash2 size={12} style={{ marginRight: '4px' }} /> Hapus
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-
-        {/* History Card */}
-        {showHistory && (
-          <div className="glass-card animate-fade-in" style={{
-            marginBottom: '2rem',
-            border: '1px solid var(--border-color)',
-            padding: 0,
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', fontSize: '1.25rem' }}>
-                <History size={20} style={{ marginRight: '10px', color: 'var(--accent-color)' }} />
-                Research History
-              </h3>
-              <button
-                onClick={() => setShowHistory(false)}
-                className="btn-secondary"
-                style={{ padding: '0.25rem', minWidth: 'auto', border: 'none', background: 'none' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="custom-scrollbar" style={{ maxHeight: 'none', padding: '1.5rem' }}>
-              {history.length === 0 ? (
-                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
-                  Belum ada riwayat pencarian.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {history.map((item, idx) => (
-                    <div key={idx} style={{
-                      background: 'rgba(255,255,255,0.03)',
-                      borderRadius: '8px',
-                      padding: '1rem',
-                      border: '1px solid var(--border-color)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'start'
-                    }}>
-                      <div onClick={() => loadFromHistory(item)} style={{ cursor: 'pointer', flex: 1 }}>
-                        <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                          {item.title || item.isbn}
-                        </div>
-                        {item.author && <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{item.author}</div>}
-                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
-                          {new Date(item.timestamp).toLocaleString()}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => deleteHistoryItem(idx)}
-                        style={{ background: 'none', border: 'none', color: 'var(--error)', opacity: 0.6, cursor: 'pointer', padding: '0.25rem' }}
-                        title="Hapus item"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {history.length > 0 && (
-              <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)', textAlign: 'right' }}>
-                <button
-                  onClick={clearHistory}
-                  className="btn-danger"
-                  style={{
-                    padding: '0.5rem 1rem',
-                    fontSize: '0.9rem'
-                  }}
-                >
-                  Clear Research Log
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        {/* History Sidebar */}
+        <HistorySidebar
+          showHistory={showHistory}
+          onClose={() => setShowHistory(false)}
+          history={history}
+          onLoadHistory={loadFromHistory}
+          onDeleteHistoryItem={deleteHistoryItem}
+          onClearHistory={clearHistory}
+        />
 
         {/* Phase A: Input Form - Only show if no verification result, no current book, settings hidden, library hidden, and history hidden */}
         {!verificationResult && !currentBook && !showSettings && !showLibrary && !showHistory && (
-          <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem' }}>
-            <form onSubmit={handleVerify}>
-              <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: showIsbn ? '1fr 1fr' : '1fr', gap: '1rem', marginBottom: '1rem' }}>
-                {showIsbn && (
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>ISBN</label>
-                    <input
-                      type="text"
-                      className="input-field"
-                      placeholder="Contoh: 978-0132350884"
-                      value={isbn}
-                      onChange={(e) => setIsbn(e.target.value)}
-                    />
-                  </div>
-                )}
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Source Title</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="Contoh: Clean Code"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Primary Author / Entity</label>
-                <input
-                  type="text"
-                  className="input-field"
-                  placeholder="Contoh: Robert C. Martin"
-                  value={author}
-                  onChange={(e) => setAuthor(e.target.value)}
-                />
-              </div>
-              <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowIsbn(!showIsbn)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--accent-color)',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                    padding: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  {showIsbn ? "Sembunyikan ISBN" : "Tampilkan Opsi ISBN"}
-                </button>
-              </div>
-              <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem' }}>
-                <button type="submit" className="btn-primary" disabled={loading} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                  {loading ? <><span className="spinner"></span> Validating Source...</> : <><Search size={18} style={{ marginRight: '8px' }} /> Analyze Book Source</>}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="btn-secondary"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 1.5rem' }}
-                  title="Reset Sesi"
-                >
-                  <RotateCcw size={18} />
-                  <span style={{ marginLeft: '8px' }}>Reset Environment</span>
-                </button>
-              </div>
-            </form>
-          </div>
+          <BookInputForm
+            isbn={isbn}
+            setIsbn={setIsbn}
+            title={title}
+            setTitle={setTitle}
+            author={author}
+            setAuthor={setAuthor}
+            showIsbn={showIsbn}
+            setShowIsbn={setShowIsbn}
+            loading={loading}
+            onSubmit={handleVerify}
+            onReset={handleReset}
+          />
         )}
 
         {/* Phase B: Verification Result - Only show if verification exists, not yet summarizing/summary, and settings hidden */}
         {verificationResult && !summarizing && !summary && !showSettings && (
-          <div className="glass-card animate-slide-up" style={{ marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                {verificationResult.status === 'success' ? (
-                  <CheckCircle size={32} color="var(--success)" style={{ marginRight: '1rem' }} />
-                ) : verificationResult.status === 'warning' ? (
-                  <AlertCircle size={32} color="var(--warning)" style={{ marginRight: '1rem' }} />
-                ) : (
-                  <AlertCircle size={32} color="var(--error)" style={{ marginRight: '1rem' }} />
-                )}
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.25rem' }}>
-                    {verificationResult.status === 'success' ? "Source Verified" :
-                      verificationResult.status === 'warning' ? "Partial Match" : "Source Refined Fail"}
-                  </h3>
-                  <p style={{ margin: 0, color: 'var(--text-secondary)' }}>{verificationResult.message}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setVerificationResult(null)}
-                className="btn-secondary"
-                style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <RotateCcw size={14} /> Cari Ulang
-              </button>
-            </div>
-
-            {verificationResult.sources.length > 0 && (
-              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px', marginTop: '1rem' }}>
-                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)' }}>Sumber Ditemukan</h4>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                  {verificationResult.sources.map((src, idx) => (
-                    <li key={idx} style={{ padding: '0.5rem 0', borderBottom: idx < verificationResult.sources.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
-                      <span style={{ fontWeight: 'bold', color: 'var(--accent-color)' }}>{src.source}</span>: {src.title}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Synopsis Display */}
-            {verificationResult.sources.length > 0 && (
-              <div style={{ marginTop: '1rem' }}>
-                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)' }}>Source Intel (Abstract)</h4>
-                <p
-                  className="custom-scrollbar"
-                  style={{
-                    fontSize: '0.9rem', lineHeight: '1.5', color: '#e2e8f0',
-                    background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '6px',
-                    maxHeight: '150px', overflowY: 'auto', fontStyle: verificationResult.sources.some(s => s.description) ? 'normal' : 'italic',
-                    opacity: verificationResult.sources.some(s => s.description) ? 1 : 0.7
-                  }}
-                >
-                  {verificationResult.sources.find(s => s.description)?.description || "No abstract available from intelligence source."}
-                </p>
-              </div>
-            )}
-
-            {verificationResult.is_valid && (
-              <div style={{ marginTop: '1.5rem' }}>
-                <div style={{ textAlign: 'center', alignSelf: 'center' }}>
-                  {!summary && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-                      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '0.5rem' }}>
-                        {/* Analytical Refining Toggle */}
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem',
-                          background: 'rgba(255,255,255,0.03)',
-                          padding: '0.5rem 1rem',
-                          borderRadius: '20px',
-                          border: '1px solid var(--border-color)',
-                          cursor: 'pointer'
-                        }} onClick={() => {
-                          const newVal = !highQuality;
-                          setHighQuality(newVal);
-                          if (newVal) setIterativeMode(false); // Mutually exclusive
-                        }}>
-                          <div className={`toggle-switch ${highQuality ? 'active' : ''}`} style={{
-                            width: '36px', height: '18px', background: highQuality ? 'var(--success)' : '#333',
-                            borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
-                          }}>
-                            <div style={{
-                              width: '14px', height: '14px', background: 'white', borderRadius: '50%',
-                              position: 'absolute', top: '2px', left: highQuality ? '20px' : '2px', transition: 'all 0.3s'
-                            }}></div>
-                          </div>
-                          <span style={{ fontSize: '0.85rem', fontWeight: '500', color: highQuality ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                            Analytical Refining Mode
-                          </span>
-                          <Sparkles size={14} color={highQuality ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={highQuality ? 1 : 0.5} />
-                        </div>
-
-                        {/* Iterative Self-Correction Toggle */}
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem',
-                          background: 'rgba(255,255,255,0.03)',
-                          padding: '0.5rem 1rem',
-                          borderRadius: '20px',
-                          border: '1px solid var(--border-color)',
-                          cursor: 'pointer'
-                        }} onClick={() => {
-                          const newVal = !iterativeMode;
-                          setIterativeMode(newVal);
-                          if (newVal) setHighQuality(false); // Mutually exclusive
-                        }}>
-                          <div className={`toggle-switch ${iterativeMode ? 'active' : ''}`} style={{
-                            width: '36px', height: '18px', background: iterativeMode ? 'var(--success)' : '#333',
-                            borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
-                          }}>
-                            <div style={{
-                              width: '14px', height: '14px', background: 'white', borderRadius: '50%',
-                              position: 'absolute', top: '2px', left: iterativeMode ? '20px' : '2px', transition: 'all 0.3s'
-                            }}></div>
-                          </div>
-                          <span style={{ fontSize: '0.85rem', fontWeight: '500', color: iterativeMode ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                            Iterative Self-Correction
-                          </span>
-                          <RotateCcw size={14} color={iterativeMode ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={iterativeMode ? 1 : 0.5} />
-                        </div>
-
-                        {/* Search Enrichment Toggle */}
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem',
-                          background: 'rgba(255,255,255,0.03)',
-                          padding: '0.5rem 1rem',
-                          borderRadius: '20px',
-                          border: '1px solid var(--border-color)',
-                          cursor: 'pointer'
-                        }} onClick={() => {
-                          const newValue = !enableSearchEnrichment;
-                          setEnableSearchEnrichment(newValue);
-                          saveConfig({ enable_search_enrichment: newValue });
-                        }}>
-                          <div className={`toggle-switch ${enableSearchEnrichment ? 'active' : ''}`} style={{
-                            width: '36px', height: '18px', background: enableSearchEnrichment ? 'var(--success)' : '#333',
-                            borderRadius: '10px', position: 'relative', transition: 'all 0.3s'
-                          }}>
-                            <div style={{
-                              width: '14px', height: '14px', background: 'white', borderRadius: '50%',
-                              position: 'absolute', top: '2px', left: enableSearchEnrichment ? '20px' : '2px', transition: 'all 0.3s'
-                            }}></div>
-                          </div>
-                          <span style={{ fontSize: '0.85rem', fontWeight: '500', color: enableSearchEnrichment ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
-                            Search Enrichment
-                          </span>
-                          <Search size={14} color={enableSearchEnrichment ? 'var(--accent-color)' : 'var(--text-secondary)'} opacity={enableSearchEnrichment ? 1 : 0.5} />
-                        </div>
-                      </div>
-
-                      {/* Configuration Panels */}
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', width: '100%' }}>
-                        {highQuality && !summary && (
-                          <div className="animate-fade-in" style={{
-                            width: '100%',
-                            maxWidth: '240px',
-                            background: 'rgba(255,255,255,0.02)',
-                            padding: '0.75rem',
-                            borderRadius: '12px',
-                            border: '1px solid var(--border-color)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.5rem'
-                          }}>
-                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>DRAFT DEPTH: {draftCount}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="1"
-                              max="10"
-                              value={draftCount}
-                              onChange={(e) => setDraftCount(parseInt(e.target.value))}
-                              className="custom-range"
-                              style={{
-                                width: '100%',
-                                marginTop: '0.5rem'
-                              }}
-                            />
-                          </div>
-                        )}
-
-                        {iterativeMode && !summary && (
-                          <div className="animate-fade-in" style={{
-                            width: '100%',
-                            maxWidth: '240px',
-                            background: 'rgba(255,255,255,0.02)',
-                            padding: '0.75rem',
-                            borderRadius: '12px',
-                            border: '1px solid var(--border-color)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.5rem'
-                          }}>
-                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Critic Model</span>
-                              <div style={{
-                                width: '14px', height: '14px', borderRadius: '50%', background: 'var(--bg-secondary)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--text-secondary)', cursor: 'help'
-                              }} title="Model used to critique and refine drafts">?</div>
-                            </div>
-                            <select
-                              className="input-field"
-                              value={criticModel}
-                              onChange={(e) => setCriticModel(e.target.value)}
-                              style={{
-                                fontSize: '0.75rem',
-                                padding: '0.3rem',
-                                marginBottom: 0,
-                                background: 'rgba(0,0,0,0.2)',
-                                border: '1px solid rgba(255,255,255,0.1)'
-                              }}
-                            >
-                              <option value="same">Same as Generator</option>
-                              {availableModels.map(m => (
-                                <option key={m} value={m}>{m.split('/').pop()}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={() => handleSummarize(false)}
-                        className="btn-primary"
-                        disabled={summarizing}
-                        style={{
-                          backgroundColor: existingSummary ? 'var(--success)' : '',
-                          borderColor: existingSummary ? 'var(--success)' : '',
-                          padding: '1rem 2rem',
-                          fontSize: '1.1rem'
-                        }}
-                      >
-                        {existingSummary ? (
-                          <><BookOpen size={20} style={{ marginRight: '10px' }} /> Load Existing Artifact</>
-                        ) : (
-                          summarizing ? <><span className="spinner"></span> Synthesizing...</> : <><Sparkles size={20} style={{ marginRight: '10px' }} /> Synthesize Intelligence Brief</>
-                        )}
-                      </button>
-
-                      {highQuality && !existingSummary && (
-                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
-                          * Mode ini menggunakan biaya token ~{draftCount}x lebih banyak.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          <VerificationResultCard
+            verificationResult={verificationResult}
+            summary={summary}
+            summarizing={summarizing}
+            highQuality={highQuality}
+            setHighQuality={setHighQuality}
+            iterativeMode={iterativeMode}
+            setIterativeMode={setIterativeMode}
+            enableSearchEnrichment={enableSearchEnrichment}
+            setEnableSearchEnrichment={setEnableSearchEnrichment}
+            draftCount={draftCount}
+            setDraftCount={setDraftCount}
+            criticModel={criticModel}
+            setCriticModel={setCriticModel}
+            availableModels={availableModels}
+            existingSummary={existingSummary}
+            onSummarize={handleSummarize}
+            onClearVerification={() => setVerificationResult(null)}
+            saveConfiguration={saveConfiguration}
+          />
         )}
 
         {/* Error Message */}
@@ -2914,7 +1459,15 @@ function App() {
                               </div>
                             )}
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              {variant.model ? variant.model.split('/').pop() : 'Unknown'}
+                              {(() => {
+                                const modelName = variant.model ? variant.model.split('/').pop() : 'Unknown';
+                                // Determine version number (older is lower number)
+                                // variants array is Newest -> Oldest.
+                                // So count how many same-model variants are AFTER this one (older than this one)
+                                const olderCount = variants.slice(variants.indexOf(variant) + 1).filter(v => v.model === variant.model).length;
+                                const version = olderCount + 1;
+                                return `${modelName} v${version}`;
+                              })()}
                               {Object.keys(variant.usage_stats || {}).length > 0 && (
                                 <div style={{ display: 'flex', gap: '2px' }}>
                                   {variant.usage_stats?.is_synthesis && <Sparkles size={10} color="#9333ea" title="Hasil Sintesis" />}
@@ -2942,7 +1495,7 @@ function App() {
                   <div className="book-cover-container" style={{ marginLeft: isStuck ? 0 : '10px' }}>
                     {currentBook && currentBook.image_url ? (
                       <img
-                        src={getImageUrl(currentBook.image_url, currentBook.last_updated)}
+                        src={getImageUrl(currentBook.image_url, currentBook.last_updated, API_BASE_URL)}
                         alt="Cover"
                         className="sharp-image"
                         style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
@@ -2951,7 +1504,7 @@ function App() {
                     ) : (
                       verificationResult?.sources?.find(s => s.image_url) && (
                         <img
-                          src={getImageUrl(verificationResult.sources.find(s => s.image_url).image_url, verificationResult.timestamp)}
+                          src={getImageUrl(verificationResult.sources.find(s => s.image_url).image_url, verificationResult.timestamp, API_BASE_URL)}
                           alt="Cover"
                           className="sharp-image"
                           style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}
@@ -3095,35 +1648,7 @@ function App() {
                 components={{
                   code({ node, inline, className, children, ...props }) {
                     const content = String(children);
-                    if (content.startsWith('intel-synth:')) {
-                      return (
-                        <span className="synthesis-mark">
-                          <Sparkles size={10} style={{ color: 'var(--accent-color)' }} />
-                          {content.replace('intel-synth:', '')}
-                        </span>
-                      );
-                    }
-                    if (content.startsWith('claim-tag:')) {
-                      const tag = content.replace('claim-tag:', '');
-                      let color = 'var(--accent-color)';
 
-                      return (
-                        <span
-                          className="claim-dot"
-                          style={{ backgroundColor: color, color: color }}
-                          title={tag}
-                        />
-                      );
-                    }
-                    if (inline && content.startsWith('ref-tag:')) {
-                      const source = content.replace('ref-tag:', '');
-                      return (
-                        <span className="ref-tag" title={`Rujukan Eksternal: ${source}`}>
-                          <Search size={8} style={{ marginRight: '2px' }} />
-                          {source.length > 15 ? source.substring(0, 12) + '...' : source}
-                        </span>
-                      );
-                    }
                     if (!inline && className === 'language-ref-section') {
                       const inner = content;
                       const items = [];
@@ -3137,19 +1662,6 @@ function App() {
 
                       return (
                         <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
-                          <div className="premium-ref-header">
-                            <div className="premium-ref-icon-wrapper">
-                              <BookOpen size={18} />
-                            </div>
-                            <div className="premium-ref-title-group">
-                              <span className="premium-ref-title">Rujukan & Verifikasi Eksternal</span>
-                              <span className="premium-ref-subtitle">Terpadu dari sumber akademik & ensiklopedia digital</span>
-                            </div>
-                            <div className="premium-ref-verified-badge">
-                              <CheckCircle size={12} />
-                              <span>Verified</span>
-                            </div>
-                          </div>
 
                           <div className="premium-ref-grid">
                             {items.map((item, idx) => {
@@ -3163,19 +1675,9 @@ function App() {
                                   className="ref-card-premium stagger-item"
                                   style={{ '--stagger-idx': idx }}
                                 >
-                                  <div className="ref-card-glow" />
-                                  <div className="ref-card-content">
-                                    <div className="ref-card-top">
-                                      <span className={`ref-type-badge ${isWiki ? 'type-wiki' : 'type-search'}`}>
-                                        {isWiki ? <Globe size={10} /> : <Search size={10} />}
-                                        {item.label}
-                                      </span>
-                                      <ExternalLink size={12} className="ref-card-external" />
-                                    </div>
-                                    <div className="ref-card-main-title">{item.title}</div>
-                                    <div className="ref-card-footer-url">
-                                      {new URL(item.url ? item.url : 'http://localhost').hostname}
-                                    </div>
+                                  <div className="ref-card-main-title">{item.title}</div>
+                                  <div className="ref-card-footer-url">
+                                    {new URL(item.url ? item.url : 'http://localhost').hostname}
                                   </div>
                                 </a>
                               );
@@ -3189,12 +1691,72 @@ function App() {
                 }}
               >
                 {summary ? summary
-                  .replace(/\[\[(.*?)\]\]/g, '`intel-synth:$1`')
-                  .replace(/\[Analisis Terintegrasi\]/g, '`claim-tag:Analisis Terintegrasi`')
-                  .replace(/\[Rujukan Eksternal: (.*?)\]/g, '`ref-tag:$1`')
                   .replace(/\[REF_SECTION\]([\s\S]*?)\[\/REF_SECTION\]/g, '\n\n```ref-section\n$1\n```\n\n')
                   : ""}
               </ReactMarkdown>
+
+              {/* Perplexity Sonar Citations Display */}
+              {sonarCitations && sonarCitations.citations && sonarCitations.citations.length > 0 && (
+                <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    marginBottom: '1rem',
+                    paddingBottom: '0.5rem',
+                    borderBottom: '1px solid var(--border-color)'
+                  }}>
+                    <Sparkles size={16} style={{ color: 'var(--accent-color)' }} />
+                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                      Sonar Citations
+                    </h3>
+                    <span className="badge" style={{
+                      background: 'rgba(147, 51, 234, 0.1)',
+                      color: '#9333ea',
+                      border: '1px solid rgba(147, 51, 234, 0.2)',
+                      fontSize: '0.7rem'
+                    }}>
+                      {sonarCitations.total_count} sources
+                    </span>
+                  </div>
+                  <div className="premium-ref-grid">
+                    {sonarCitations.citations.map((citation, idx) => (
+                      <a
+                        key={idx}
+                        href={citation.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ref-card-premium stagger-item"
+                        style={{ '--stagger-idx': idx }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                          <span style={{
+                            fontSize: '0.7rem',
+                            fontWeight: '700',
+                            color: 'var(--accent-color)',
+                            background: 'rgba(147, 51, 234, 0.1)',
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '4px'
+                          }}>
+                            [{citation.index}]
+                          </span>
+                          <div className="ref-card-main-title" style={{ flex: 1 }}>
+                            {citation.title}
+                          </div>
+                        </div>
+                        {citation.published_date && (
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                            📅 {citation.published_date}
+                          </div>
+                        )}
+                        <div className="ref-card-footer-url">
+                          {new URL(citation.url).hostname}
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {summarizing && summary && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>
@@ -3538,8 +2100,9 @@ function App() {
                 </div>
               </div>
             )}
-          </div>
-        )}
+          </div >
+        )
+        }
       </div >
 
       {/* Custom Modals */}
@@ -3576,7 +2139,8 @@ function App() {
         isOpen={isCoverModalOpen}
         book={coverEditBook}
         onClose={() => setIsCoverModalOpen(false)}
-        onSave={handleUpdateCover}
+        onSave={(url) => handleUpdateCover(coverEditBook.id, url)}
+        apiBaseUrl={API_BASE_URL}
       />
 
       <MetadataEditModal
@@ -3813,4 +2377,3 @@ function App() {
 }
 
 export default App;
-
