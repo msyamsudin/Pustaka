@@ -694,6 +694,16 @@ function App() {
                   draft_count: data.draft_count,
                   format: data.format
                 });
+
+                // Mark Iterative Progress as Complete
+                if (data.is_enhanced && iterativeMode) {
+                  setIterativeStats(prev => ({
+                    ...prev,
+                    status: 'Optimization Complete',
+                    isComplete: true,
+                    totalIterations: data.draft_count // Pass total iterations to detect early stop
+                  }));
+                }
                 if (data.is_enhanced) {
                   const modeName = data.format === 'iterative_refined' ? 'Iterative Self-Correction' : 'Analytical Refining';
                   showToast(`Kualitas ditingkatkan via ${modeName}`, "success");
