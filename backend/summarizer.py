@@ -11,6 +11,8 @@ import anyio
 from openai import OpenAI
 
 from currency_manager import CurrencyManager
+import prompt_templates
+import summarizer_utils
 
 
 class BookSummarizerError(Exception):
@@ -19,58 +21,6 @@ class BookSummarizerError(Exception):
 
 
 class BookSummarizer:
-    # --- KONFIGURASI 3 SECTION (DIPERBARUI) ---
-    STANDARD_SECTIONS = [
-        "EXECUTIVE SUMMARY & CORE THESIS",
-        "ANALYTICAL FRAMEWORK",
-        "MARKET & INTELLECTUAL POSITIONING"
-    ]
-    
-    SECTION_KEYWORDS = {
-        "EXECUTIVE SUMMARY & CORE THESIS": ["executive", "summary", "core thesis", "ringkasan", "tesis", "quote", "kutipan"],
-        "ANALYTICAL FRAMEWORK": ["analytical", "framework", "glossary", "reasoning", "blueprint", "architecture", "kerangka", "istilah", "glosarium"],
-        "MARKET & INTELLECTUAL POSITIONING": ["market", "positioning", "comparative", "komparatif", "posisi", "competitor", "pesaing"]
-    }
-
-    # Sentralisasi Template Struktur untuk Unifikasi Output
-    CORE_STRUCTURE_PROMPT = """
-<output_structure_template>
-## 1. EXECUTIVE SUMMARY & CORE THESIS
-[Format: Paragraf (Ringkasan) + Poin-poin (Argumen Kunci) + Blockquote (Kutipan Ikonik)]
-- **Ringkasan Inti**: Satu paragraf kohesif (100-150 kata) yang mencakup tesis, metodologi, temuan utama, dan batasan.
-- **Tesis Utama & Argumen**: 4-6 poin bulet. Format: • **[Klaim]**: [Elaborasi] → [Implikasi].
-- **Kutipan Representatif**: > "Kutipan verbatim atau yang paling sesuai" — Penulis. Diikuti 1-2 kalimat analisis.
-
-## 2. ANALYTICAL FRAMEWORK
-[Format: Istilah Teknis (Glosarium) + Blueprint Logika (Penalaran)]
-- **Glosarium Terminologi**: 5-8 istilah teknis KUNCI yang didefinisikan ulang atau dioperasionalkan dalam buku. Format: **[Istilah]**: Definisi.
-- **Blueprint Penalaran**: 
-  A. Celah yang Diidentifikasi (Apa yang hilang dalam diskursus?)
-  B. Metodologi/Solusi yang Diusulkan (Pendekatan penulis)
-  C. Konvergensi Argumen & Simpulan Rasional (Hasil yang terbukti)
-
-## 3. MARKET & INTELLECTUAL POSITIONING
-[Format: Analisis Kontekstual]
-- **Kompetitor Langsung**: Kontras dengan 1-2 karya seminal lainnya.
-- **Unique Selling Proposition (USP)**: Nilai spesifik yang tidak ditemukan di tempat lain.
-- **Warisan Intelektual**: Aliran pemikiran yang dibangun atau ditantang.
-</output_structure_template>
-"""
-
-    # Mapping tetap dibutuhkan untuk membaca format lama jika ada, 
-    # tapi fokus utama adalah memproduksi format baru.
-    NAME_MAPPINGS = {
-        "EXECUTIVE ANALYTICAL BRIEF": "EXECUTIVE SUMMARY & CORE THESIS",
-        "CORE THESIS & KEY ARGUMENTS": "EXECUTIVE SUMMARY & CORE THESIS",
-        "REPRESENTATIVE SYNTHESIS": "EXECUTIVE SUMMARY & CORE THESIS",
-        
-        "CONCEPTUAL ARCHITECTURE": "ANALYTICAL FRAMEWORK",
-        "GLOSSARY OF DENSITY": "ANALYTICAL FRAMEWORK",
-        "REASONING BLUEPRINT": "ANALYTICAL FRAMEWORK",
-        
-        "COMPARATIVE POSITIONING": "MARKET & INTELLECTUAL POSITIONING",
-    }
-
     # Cache & Locks
     _pricing_cache = {}
     _pricing_cache_lock = Lock()
@@ -87,9 +37,16 @@ class BookSummarizer:
         max_retries: int = 3,
         search_config: Optional[Dict] = None
     ):
-        self.api_key = api_key
-        self.model_name = model_name or "google/gemini-2.0-flash-exp:free"
-        self.provider = provider
+        self.api_key = api_key.strip() if api_key else None
+        
+        # Validation: check if the key is actually a log message (common corruption)
+        if self.api_key and (self.api_key.startswith("INFO:") or self.api_key.startswith("ERROR:")):
+            print(f"[AUTH_WARNING] API Key appears to be a corrupted log message: {self.api_key[:20]}...")
+            self.api_key = None # Treat as missing so it doesn't try to use it
+            self.init_error = "API Key Anda tampak rusak (berisi log server). Harap masukkan ulang API Key yang benar di Pengaturan."
+        self.model_name = (model_name or "google/gemini-2.0-flash-exp:free").strip()
+        self.provider = provider.capitalize() if provider else "OpenRouter"
+        if self.provider == "Openrouter": self.provider = "OpenRouter" # Fix capitalization
         self.base_url = base_url or "http://localhost:11434"
         self.timeout = timeout
         self.max_retries = max_retries
@@ -107,25 +64,15 @@ class BookSummarizer:
             except Exception as e:
                 print(f"[SEARCH_WARNING] Failed to initialize search: {e}")
         
-        # Pre-compile Regex
-        self._regex_patterns = {
-            'markdown': re.compile(r'^#{1,3}\s*(?:\d+[\.\)]\s*)?(.+?)$'),
-            'bold': re.compile(r'^\*\*\s*(?:\d+[\.\)]\s*)?(.+?)\s*\*\*$'),
-            'numbered': re.compile(r'^\d+[\.\)]\s+([A-Z].{8,})$'),
-            'caps': re.compile(r'^([A-Z][A-Z\s&\-\(\)]{9,})$'),
-            'clean_header': re.compile(r'[^\w\s&]'),
-            'normalize_space': re.compile(r'\s+'),
-            'separator': re.compile(r"═{3,}.*?═{3,}", re.DOTALL),
-            'dashes': re.compile(r"[-_=]{10,}"),
-            'meta': re.compile(r"\(Rangkuman selesai.*?\)|\(Selesai.*?\)|\(Catatan:.*?\)|Rangkuman selesai.*$|Semoga bermanfaat.*$|^RANGKUMAN.*?:\s.*?$|^RANGKUMAN.*?$", re.IGNORECASE | re.MULTILINE),
-            'excess_newlines': re.compile(r"\n{3,}")
-        }
-
         self._initialize_client()
 
     def _initialize_client(self):
         try:
             if self.provider == "OpenRouter" and self.api_key:
+                # Mask API Key for logging (showing first 4 and last 4)
+                masked_key = f"{self.api_key[:4]}...{self.api_key[-4:]}" if len(self.api_key) > 8 else "***"
+                print(f"[INIT] Initializing OpenRouter client with key: {masked_key} (len={len(self.api_key)})")
+                
                 self.client = OpenAI(
                     base_url="https://openrouter.ai/api/v1",
                     api_key=self.api_key,
@@ -145,8 +92,10 @@ class BookSummarizer:
             else:
                 self.client = None
         except Exception as e:
-            print(f"Init error: {e}")
+            print(f"[RETRY_INIT] Error during client initialization: {e}")
             self.client = None
+            # Also catch specific error to help user
+            self.init_error = str(e)
 
     def _verify_ollama_connection(self):
         try:
@@ -156,12 +105,6 @@ class BookSummarizer:
         except requests.exceptions.RequestException as e:
             raise BookSummarizerError(f"Cannot connect to Ollama: {str(e)}")
 
-    @staticmethod
-    def _sanitize_input(text: str, max_length: int = 500) -> str:
-        if not text: return ""
-        sanitized = re.sub(r'[\`]', '', str(text))
-        sanitized = re.sub(r'\n\n+', ' ', sanitized)
-        return (sanitized[:max_length] + "...") if len(sanitized) > max_length else sanitized.strip()
 
     def _extract_metadata(self, book_metadata: List[Dict]) -> Dict[str, str]:
         if not book_metadata: raise BookSummarizerError("Empty metadata")
@@ -173,9 +116,9 @@ class BookSummarizer:
             return ""
 
         return {
-            "title": self._sanitize_input(primary.get("title", "Unknown"), 200),
-            "author": self._sanitize_input(", ".join(primary.get("authors", [])) if isinstance(primary.get("authors"), list) else str(primary.get("authors", "")), 200),
-            "genre": self._sanitize_input(get_val("genre"), 100),
+            "title": summarizer_utils.sanitize_input(primary.get("title", "Unknown"), 200),
+            "author": summarizer_utils.sanitize_input(", ".join(primary.get("authors", [])) if isinstance(primary.get("authors"), list) else str(primary.get("authors", "")), 200),
+            "genre": summarizer_utils.sanitize_input(get_val("genre"), 100),
             "year": str(primary.get("publishedDate", get_val("publishedDate"))).split("-")[0],
             "description": get_val("description")
         }
@@ -192,94 +135,10 @@ class BookSummarizer:
         if not title or not author: raise BookSummarizerError("Missing title/author")
         
         if mode == "judge" and drafts:
-            return self._build_judge_prompt(title, author, genre, year, drafts)
+            return prompt_templates.build_judge_prompt(title, author, genre, year, drafts)
 
-        return self._build_summarize_prompt(title, author, genre, year, context_description, source_note, partial_content, search_context)
+        return prompt_templates.build_summarize_prompt(title, author, genre, year, context_description, source_note, partial_content, search_context)
 
-    def _build_summarize_prompt(self, title: str, author: str, genre: str, year: str, 
-                                context: str, source: str, partial: Optional[str], 
-                                search_context: Optional[str] = None) -> str:
-        """Prompt yang meminta AI menggabungkan konten menjadi 3 Section Padat"""
-        
-        intro = f"""<document_metadata>
-Title         : {title}
-Author        : {author}
-Published Year: {year}
-Genre/Category: {genre}
-Data Source   : {source}
-Description   : {context[:500] if context else "[Not available]"}
-</document_metadata>
-
-<role_definition>
-You are a MULTI-SOURCE INTELLIGENCE ANALYST focused on density and precision.
-Your goal is to transform content into 3 CONSOLIDATED PRIMARY SECTIONS.
-</role_definition>
-{search_context if search_context else ""}
-<data_precision_policy>
-1. Wrap synthesized/estimated quantitative data with `[[ ]]`.
-2. Use illustrative ranges for large numbers.
-3. Soften causal claims to correlational where appropriate.
-</data_precision_policy>
-
-<claim_tagging_policy>
-Explicitly label every important claim/statement with ONE of these tags:
-- [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
-- [Rujukan Eksternal: Nama Sumber] : Information or context derived from external search/Wikipedia. MUST be used for scholarly or general high-quality context (e.g., [Rujukan Eksternal: Brill/JSTOR] or [Rujukan Eksternal: BBC/Tirto]).
-</claim_tagging_policy>
-
-<scholarly_policy>
-1. Padukan berbagai perspektif, terutama membandingkan teks primer dengan historiografi akademik dan analisis publik berkualitas tinggi (General High Quality).
-2. Jika merujuk sumber eksternal, beri prioritas pada edisi kritis, tokoh akademik/pakar, atau ulasan mendalam dari media kredibel.
-3. Hindari parafrasa dangkal; fokus pada "intellectual positioning" dan bobot historis/analitis dari argumen.
-</scholarly_policy>
-
-<output_structure>
-{self.CORE_STRUCTURE_PROMPT}
-CRITICAL: You MUST use the English Headers (##) and Indonesian labels exactly as defined above.
-</output_structure>
-
-<linguistic_guidelines>
-- Body content in **Bahasa Indonesia** (Formal-Academic).
-- Headers in **English** (as shown above). Use them exactly.
-- **Terminology**: You may use common English technical/business terms (e.g., "market positioning", "core thesis", "USP") if they are standard in academic/professional Indonesian discourse. Do not force-translate these if it sounds unnatural.
-- Maximum density. No filler.
-</linguistic_guidelines>
-"""
-        
-        if partial:
-            return intro + f"\n<recovery_mode>CONTINUE from interruption:\n---\n{partial}\n---\nSKIP completed sections.</recovery_mode>"
-        
-        return intro
-
-    def _build_judge_prompt(self, title: str, author: str, genre: str, year: str, drafts: List[str]) -> str:
-        """Prompt untuk menggabungkan draft menjadi 3 Section Final"""
-        valid_drafts = [d.strip() for d in drafts if d and str(d).strip()]
-        formatted = "\n\n".join([f"═══ DRAFT {i+1} ═══\n{d}" for i, d in enumerate(valid_drafts)])
-        
-        return f"""<role>SENIOR EDITOR: Consolidate content into 3 PRIMARY SECTIONS.</role>
-
-<task>Meramu dan mensinkronisasi {len(valid_drafts)} draf untuk buku: "{title}" karya {author}.</task>
-
-<drafts>{formatted}</drafts>
-
-<claim_tagging_policy>
-Explicitly label every important claim/statement with ONE of these tags:
-- [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
-</claim_tagging_policy>
-
-<instructions>
-1. Gabungkan Konten: Campurkan 'Ringkasan Inti', 'Tesis Utama & Argumen', dan 'Kutipan' ke dalam Bagian 1.
-2. Gabungkan 'Glosarium Terminologi' dan 'Blueprint Penalaran' ke dalam Bagian 2.
-3. Pertahankan 'Posisi Pasar & Intelektual' (Positioning) sebagai bagian akhir yang terpisah.
-4. Hilangkan langkah-langkah strategis atau batasan yang redundan kecuali jika sangat vital bagi posisi buku tersebut.
-5. Output HANYA menghasilkan 3 bagian di bawah ini.
-6. Konten body HARUS dalam Bahasa Indonesia (Formal-Akademik). Header HARUS tetap dalam Bahasa Inggris.
-8. TERAPKAN LABEL KLAIM: Tandai pernyataan kunci dengan [Analisis Terintegrasi].
-</instructions>
-
-<output_structure>
-{chr(10).join([f"- ## {i+1}. {s}" for i, s in enumerate(self.STANDARD_SECTIONS)])}
-</output_structure>"""
 
     # --- API HELPERS ---
 
@@ -289,7 +148,7 @@ Explicitly label every important claim/statement with ONE of these tags:
             if r.status_code != 200: return {"error": r.text}
             d = r.json()
             return {
-                "content": self._clean_output(d.get("response", "")),
+                "content": summarizer_utils.clean_output(d.get("response", "")),
                 "usage": {"prompt_tokens": d.get("prompt_eval_count", 0), "completion_tokens": d.get("eval_count", 0), "total_tokens": d.get("prompt_eval_count", 0) + d.get("eval_count", 0)},
                 "duration_seconds": round(time.time() - start_time, 2)
             }
@@ -325,7 +184,7 @@ Explicitly label every important claim/statement with ONE of these tags:
                     
                 print(f"[SUCCESS] Received {u.completion_tokens} tokens.")
                 return {
-                    "content": self._clean_output(content),
+                    "content": summarizer_utils.clean_output(content),
                     "usage": {"prompt_tokens": u.prompt_tokens, "completion_tokens": u.completion_tokens, "total_tokens": u.total_tokens}
                 }
             
@@ -365,14 +224,14 @@ Explicitly label every important claim/statement with ONE of these tags:
             print("[FATAL] No drafts provided.")
             yield {"error": "No drafts"}; return
         
-        diversity_analysis = diversity_analysis or self._calculate_draft_diversity(drafts)
+        diversity_analysis = diversity_analysis or summarizer_utils.calculate_draft_diversity(drafts)
         yield {"status": "Analyzing draft architecture...", "progress": 5}
 
         start_time = time.time()
-        all_sections_data = [self._extract_sections(d) for d in drafts]
+        all_sections_data = [summarizer_utils.extract_sections(d, prompt_templates.NAME_MAPPINGS) for d in drafts]
         
         section_tasks = []
-        for i, section_name in enumerate(self.STANDARD_SECTIONS):
+        for i, section_name in enumerate(prompt_templates.STANDARD_SECTIONS):
             section_contents = []
             
             for draft_idx, sections in enumerate(all_sections_data):
@@ -407,8 +266,13 @@ Explicitly label every important claim/statement with ONE of these tags:
             
             async def run_section_synthesis(task):
                 try:
-                    prompt = self._create_section_synthesis_prompt(
-                        task["name"], task["contents"], title, author, genre, year, len(drafts), task["use_full_context"]
+                    hints = {
+                        "EXECUTIVE SUMMARY & CORE THESIS": "Integrasikan Ringkasan Inti, Tesis Utama & Argumen, dan Kutipan Ikonik menjadi satu bagian yang kohesif.",
+                        "ANALYTICAL FRAMEWORK": "Gabungkan Glosarium Terminologi dan Blueprint Penalaran (Celah, Metode, Konvergensi) di sini.",
+                        "MARKET & INTELLECTUAL POSITIONING": "Fokus pada Kompetitor Langsung, USP, dan Warisan Intelektual."
+                    }
+                    prompt = prompt_templates.build_section_synthesis_prompt(
+                        task["name"], task["contents"], title, author, genre, year, len(drafts), task["use_full_context"], hints
                     )
                     res = await anyio.to_thread.run_sync(self._synthesize_section, prompt, start_time)
                     await send_stream.send((task, res))
@@ -446,8 +310,8 @@ Explicitly label every important claim/statement with ONE of these tags:
 
         # RECONSTRUCT DOCUMENT
         final_parts = []
-        for std_name in self.STANDARD_SECTIONS:
-            best_key = next((k for k in synthesized_sections if self._normalize_section_name(k) == self._normalize_section_name(std_name)), None)
+        for std_name in prompt_templates.STANDARD_SECTIONS:
+            best_key = next((k for k in synthesized_sections if summarizer_utils.normalize_section_name(k, prompt_templates.NAME_MAPPINGS) == summarizer_utils.normalize_section_name(std_name, prompt_templates.NAME_MAPPINGS)), None)
             if best_key:
                 final_parts.append(f"## {std_name}")
                 final_parts.append(synthesized_sections[best_key])
@@ -482,148 +346,28 @@ Explicitly label every important claim/statement with ONE of these tags:
     def _match_section_in_draft(self, target: str, draft_sections: Dict, draft_idx: int) -> Optional[str]:
         if target in draft_sections: return draft_sections[target]
         
-        norm_target = self._normalize_section_name(target)
+        norm_target = summarizer_utils.normalize_section_name(target, prompt_templates.NAME_MAPPINGS)
         
         potential_sources = []
-        for old_name, new_name in self.NAME_MAPPINGS.items():
-            if self._normalize_section_name(new_name) == norm_target:
+        for old_name, new_name in prompt_templates.NAME_MAPPINGS.items():
+            if summarizer_utils.normalize_section_name(new_name, prompt_templates.NAME_MAPPINGS) == norm_target:
                 potential_sources.append(old_name)
         
         found_contents = []
         for old_name in potential_sources:
-            norm_old = self._normalize_section_name(old_name)
+            norm_old = summarizer_utils.normalize_section_name(old_name, prompt_templates.NAME_MAPPINGS)
             for k, v in draft_sections.items():
-                if self._normalize_section_name(k) == norm_old:
+                if summarizer_utils.normalize_section_name(k, prompt_templates.NAME_MAPPINGS) == norm_old:
                     found_contents.append(v)
         
         if found_contents:
             return "\n\n".join(found_contents)
 
         for k, v in draft_sections.items():
-            if self._normalize_section_name(k) == norm_target: return v
+            if summarizer_utils.normalize_section_name(k, prompt_templates.NAME_MAPPINGS) == norm_target: return v
             
         return None
 
-    def _create_section_synthesis_prompt(self, name: str, contents: List[str], t: str, a: str, g: str, y: str, dc: int, full: bool) -> str:
-        valid_contents = [c for c in contents if c and str(c).strip()]
-        
-        if not valid_contents:
-            return f"""<role>ACADEMIC EDITOR</role>
-<task>Generate the "{name}" section for: "{t}" by {a}.</task>
-<instruction>No source material. Generate high-quality placeholder.</instruction>"""
-
-        limit_char = 800 if full else 3000 
-        
-        fmt = "\n\n".join([
-            f"═══ SOURCE {i+1} ═══\n{c[:limit_char]}..." if full else f"═══ DRAFT {i+1} ═══\n{c}" 
-            for i, c in enumerate(valid_contents)
-        ])
-        
-        # HINTS DIPERBARUI HANYA UNTUK 3 SECTION (Label Bahasa Indonesia)
-        hints = {
-            "EXECUTIVE SUMMARY & CORE THESIS": "Integrasikan Ringkasan Inti, Tesis Utama & Argumen, dan Kutipan Ikonik menjadi satu bagian yang kohesif.",
-            "ANALYTICAL FRAMEWORK": "Gabungkan Glosarium Terminologi dan Blueprint Penalaran (Celah, Metode, Konvergensi) di sini.",
-            "MARKET & INTELLECTUAL POSITIONING": "Fokus pada Kompetitor Langsung, USP, dan Warisan Intelektual."
-        }
-        
-        hint = hints.get(name, "Harmonisasikan konten untuk bagian ini.")
-        
-        return f"""<role>ACADEMIC EDITOR</role>
-<context>BOOK: "{t}" by {a}</context>
-<task>{hint}</task>
-<material>{fmt}</material>
-
-<claim_tagging_policy>
-Explicitly label every important claim/statement with ONE of these tags:
-- [Analisis Terintegrasi] : Key claim, analytical insight, or cross-source logic.
-- [Rujukan Eksternal: Nama Sumber] : Information or context derived from external search/Wikipedia.
-</claim_tagging_policy>
-
-<instructions>
-1. Output body content MUST be in Bahasa Indonesia.
-2. High density.
-3. Use `[[...]]` for data.
-4. Do not include header (##) in response.
-5. APPLY CLAIM TAGGING: Use [Analisis Terintegrasi].
-</instructions>"""
-
-    def _normalize_section_name(self, name: str) -> str:
-        if name.startswith('#'): 
-            name = name.lstrip('#').strip()
-        
-        clean = self._regex_patterns['clean_header'].sub('', name)
-        clean = self._regex_patterns['normalize_space'].sub(' ', clean).strip().upper()
-        clean = re.sub(r'^[\d\.\)\s]+', '', clean).strip()
-        
-        if clean in self.NAME_MAPPINGS: 
-            return self.NAME_MAPPINGS[clean]
-        
-        base = clean.split('(')[0].strip()
-        for key, val in self.NAME_MAPPINGS.items():
-            if base in key or key in base: 
-                return val
-            
-        return clean
-
-    def _extract_sections(self, content: str) -> Dict[str, str]:
-        sections = {}
-        curr = None
-        buf = []
-        lines = content.split('\n')
-        
-        print(f"[DEBUG] _extract_sections: Processing content length {len(content)} chars...")
-
-        for line in lines:
-            s = line.strip()
-            if not s:
-                if curr: buf.append(line)
-                continue
-            
-            match = (self._regex_patterns['markdown'].match(s) or
-                     self._regex_patterns['bold'].match(s) or
-                     self._regex_patterns['numbered'].match(s))
-            
-            if not match and len(s) >= 10:
-                c = self._regex_patterns['caps'].match(s)
-                if c:
-                    pot = c.group(1).strip()
-                    if any(kw in pot for kw in ['EXECUTIVE', 'ANALYTICAL', 'MARKET', 'THESIS', 'GLOSSARY']):
-                        match = c
-                    # Filter keyword untuk section yang dihapus agar tidak terbaca sebagai header baru
-                    if any(kw in pot for kw in ['STRATEGIC', 'ACTION', 'LIMITATIONS', 'CRITICAL']):
-                        continue 
-
-            if match:
-                if curr: sections[curr] = '\n'.join(buf).strip()
-                raw = match.group(1).strip()
-                curr = self._normalize_section_name(raw)
-                buf = []
-            elif curr:
-                buf.append(line)
-        
-        if curr and buf: sections[curr] = '\n'.join(buf).strip()
-        
-        print(f"[DEBUG] Extracted {len(sections)} sections: {list(sections.keys())}")
-        return sections
-
-    def _calculate_draft_diversity(self, drafts: List[str]) -> Dict:
-        if len(drafts) < 2: return {"diversity_score": 0.0}
-        samples = [d[:1000] for d in drafts]
-        tot, cnt = 0, 0
-        for i in range(len(samples)):
-            for j in range(i+1, len(samples)):
-                tot += SequenceMatcher(None, samples[i], samples[j]).ratio()
-                cnt += 1
-        return {"diversity_score": round(1 - (tot/cnt), 3) if cnt else 0}
-
-    # --- UTILITIES ---
-
-    def _clean_output(self, text: str) -> str:
-        text = self._regex_patterns['separator'].sub("", text)
-        text = self._regex_patterns['dashes'].sub("", text)
-        text = self._regex_patterns['meta'].sub("", text)
-        text = self._regex_patterns['excess_newlines'].sub("\n\n", text)
-        return text.strip()
 
     def _generate_references_markdown(self, search_results: Dict) -> str:
         """Generates a structured tag for external references for premium frontend rendering."""
@@ -652,6 +396,98 @@ Explicitly label every important claim/statement with ONE of these tags:
         
         lines.append("[/REF_SECTION]")
         return "\n".join(lines)
+
+    def _extract_perplexity_citations(self, completion_obj) -> Optional[Dict]:
+        """
+        Extracts citations from Perplexity Sonar API response.
+        Perplexity provides citations in the response object, either as:
+        - 'citations': array of URLs
+        - 'search_results': object with detailed metadata (title, url, published_date)
+        
+        Returns structured citation data or None if not a Perplexity model.
+        Note: OpenRouter may not pass through Perplexity citations metadata.
+        """
+        # Only process for Perplexity/Sonar models
+        if not self.model_name or not any(keyword in self.model_name.lower() for keyword in ['perplexity', 'sonar']):
+            return None
+        
+        try:
+            # Check if completion object has citations or search_results
+            citations_data = None
+            
+            # Try to get from completion object attributes
+            if hasattr(completion_obj, 'citations'):
+                citations_data = {'citations': completion_obj.citations}
+            elif hasattr(completion_obj, 'search_results'):
+                citations_data = {'search_results': completion_obj.search_results}
+            
+            # Also check in the raw response if available
+            if not citations_data and hasattr(completion_obj, 'model_extra'):
+                extra = completion_obj.model_extra or {}
+                if 'citations' in extra:
+                    citations_data = {'citations': extra['citations']}
+                elif 'search_results' in extra:
+                    citations_data = {'search_results': extra['search_results']}
+            
+            # Check in choices[0].message or delta if available
+            if not citations_data and hasattr(completion_obj, 'choices'):
+                if completion_obj.choices and len(completion_obj.choices) > 0:
+                    choice = completion_obj.choices[0]
+                    
+                    # For non-streaming responses (ChatCompletion)
+                    if hasattr(choice, 'message'):
+                        message = choice.message
+                        if hasattr(message, 'citations'):
+                            citations_data = {'citations': message.citations}
+                    
+                    # For streaming responses (ChatCompletionChunk) - check delta
+                    elif hasattr(choice, 'delta'):
+                        delta = choice.delta
+                        if hasattr(delta, 'citations'):
+                            citations_data = {'citations': delta.citations}
+            
+            if not citations_data:
+                return None
+            
+            # Process citations into structured format
+            structured_citations = []
+            
+            # Handle 'citations' array format (simple URLs)
+            if 'citations' in citations_data and isinstance(citations_data['citations'], list):
+                for idx, url in enumerate(citations_data['citations'], 1):
+                    if url:
+                        structured_citations.append({
+                            'index': idx,
+                            'url': url,
+                            'title': f'Source {idx}',  # Fallback title
+                            'type': 'citation'
+                        })
+            
+            # Handle 'search_results' format (detailed metadata)
+            elif 'search_results' in citations_data and isinstance(citations_data['search_results'], list):
+                for idx, result in enumerate(citations_data['search_results'], 1):
+                    if isinstance(result, dict):
+                        structured_citations.append({
+                            'index': idx,
+                            'url': result.get('url', ''),
+                            'title': result.get('title', f'Source {idx}'),
+                            'published_date': result.get('published_date', ''),
+                            'type': 'search_result'
+                        })
+            
+            if structured_citations:
+                print(f"[SONAR_CITATIONS] Extracted {len(structured_citations)} citations from Perplexity response")
+                return {
+                    'provider': 'perplexity_sonar',
+                    'model': self.model_name,
+                    'citations': structured_citations,
+                    'total_count': len(structured_citations)
+                }
+            
+        except Exception as e:
+            print(f"[SONAR_CITATIONS_ERROR] Failed to extract citations: {e}")
+        
+        return None
 
     def _calculate_cost(self, p_t: int, c_t: int) -> Dict:
         if self.model_name.endswith(":free"): return {"total_usd": 0.0, "total_idr": 0, "currency": "USD", "is_free": True}
@@ -735,7 +571,7 @@ Explicitly label every important claim/statement with ONE of these tags:
             if self.provider == "Ollama":
                 r = self._summarize_ollama(p, start)
                 if "content" in r: 
-                    r["content"] = self._normalize_output_format(r["content"])
+                    r["content"] = summarizer_utils.normalize_output_format(r["content"])
                     # Append references
                     refs_markdown = self._generate_references_markdown(search_results if search_results else {})
                     if refs_markdown:
@@ -746,8 +582,11 @@ Explicitly label every important claim/statement with ONE of these tags:
             with self._client_lock:
                 c = self.client.chat.completions.create(model=self.model_name, messages=[{"role": "user", "content": p}])
             
+            # Extract Perplexity citations if available
+            sonar_citations = self._extract_perplexity_citations(c)
+            
             u = c.usage
-            final_content = self._normalize_output_format(self._clean_output(c.choices[0].message.content))
+            final_content = summarizer_utils.normalize_output_format(summarizer_utils.clean_output(c.choices[0].message.content))
             
             # Append references
             refs_markdown = self._generate_references_markdown(search_results if search_results else {})
@@ -761,6 +600,11 @@ Explicitly label every important claim/statement with ONE of these tags:
                 "cost_estimate": self._calculate_cost(u.prompt_tokens, u.completion_tokens),
                 "duration_seconds": round(time.time() - start, 2)
             }
+            
+            # Add Perplexity citations if available
+            if sonar_citations:
+                res["sonar_citations"] = sonar_citations
+            
             if search_results and search_results.get("search_metadata"):
                 res["search_metadata"] = search_results["search_metadata"]
                 res["search_sources"] = {
@@ -797,9 +641,9 @@ Explicitly label every important claim/statement with ONE of these tags:
 
 <instructions>
 1. Categorize each result into ONE of these three levels:
-   - "scholarly": Journal articles, academic publishers (Brill, Oxford, KITLV), critical reviews by scholars, historical manuscripts, or peer-reviewed findings.
-   - "general": High-quality long-form articles, reputable news analysis (BBC, NYT, Tirto, Kompas), detailed book reviews from verified enthusiasts/critics, or institutional reports.
-   - "shallow": Generic blog posts (WordPress, Blogspot), book catalogs/commerce (Gramedia, Play Store, Tokopedia), shallow buzzword-filled summaries, or unrelated content.
+   - "scholarly": Journal articles, academic publishers (University Presses), critical reviews by scholars, historical manuscripts, or peer-reviewed findings.
+   - "general": High-quality long-form articles, reputable news analysis (International/Verified Media), detailed book reviews from verified enthusiasts/critics, or institutional reports.
+   - "shallow": Generic blog posts (WordPress, Blogspot), book catalogs/commerce (Online Stores/Marketplaces), shallow buzzword-filled summaries, or unrelated content.
 2. Return a JSON object with a "relevance" key containing an array of strings (the labels).
 3. Example: {{"relevance": ["scholarly", "general", "shallow"]}}
 </instructions>
@@ -833,7 +677,16 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
             
             print(f"[RELEVANCE_EVAL_DEBUG] Fallback: AI response was not a valid object with 'relevance' list: {content}")
         except Exception as e:
-            print(f"[RELEVANCE_EVAL_ERROR] {e}")
+            # Improved error handling for debugging
+            error_msg = str(e)
+            if "401" in error_msg or "Unauthorized" in error_msg:
+                print(f"[RELEVANCE_EVAL_AUTH_ERROR] Provider: {self.provider}, Model: {self.model_name}")
+                print(f"[RELEVANCE_EVAL_AUTH_ERROR] Error Details: {error_msg}")
+                if self.api_key:
+                    masked_key = f"{self.api_key[:4]}...{self.api_key[-4:]}" if len(self.api_key) > 8 else "***"
+                    print(f"[RELEVANCE_EVAL_AUTH_ERROR] Active Key: {masked_key}")
+            else:
+                print(f"[RELEVANCE_EVAL_ERROR] {repr(e)}")
             
         # Fallback: mark as general if AI fails
         return ["general"] * len(results)
@@ -848,6 +701,7 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
             search_metadata = {}
             search_results = {}
             if self.search_aggregator:
+                print(f"[SEARCH] Starting search for: {m['title']} by {m['author']}")
                 yield f"data: {json.dumps({'status': 'Searching and verifying external sources...', 'progress': 3})}\n\n"
                 try:
                     # Define a synchronous wrapper for the evaluation callback
@@ -859,17 +713,25 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
                         m["title"], m["author"], m.get("genre", ""),
                         evaluation_wrapper
                     )
+                    
+                    print(f"[SEARCH] Raw search results: brave={len(search_results.get('brave_results', []))}, wiki={bool(search_results.get('wikipedia_summary'))}")
+                    print(f"[SEARCH] Search metadata: {search_results.get('search_metadata', {})}")
+                    
                     search_context_str = self.search_aggregator.format_for_prompt(search_results)
                     search_metadata = search_results.get("search_metadata", {})
                     if search_metadata.get("total_sources", 0) > 0:
                         print(f"[SEARCH] Found {search_metadata['total_sources']} verified sources ({search_metadata.get('iterations', 1)} iterations)")
+                    else:
+                        print(f"[SEARCH] No sources found. Errors: {search_metadata.get('errors', [])}")
                 except Exception as e:
                     print(f"[SEARCH_WARNING] Search failed, continuing without enrichment: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             # Build prompt with search context
-            p = self._build_summarize_prompt(
+            p = self._get_full_prompt(
                 m["title"], m["author"], m["genre"], m["year"], 
-                m["description"], "info", partial_content, search_context_str
+                m["description"], "info", partial_content, "summarize", None, search_context_str
             )
             if not p: yield f"data: {json.dumps({'error': 'Prompt failed'})}\n\n"; return
             
@@ -878,7 +740,10 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
                 async for chunk in self._stream_ollama(p, start, search_results):
                     yield chunk
             else:
-                if not self.client: yield f"data: {json.dumps({'error': 'No client'})}\n\n"; return
+                if not self.client: 
+                    err_ext = f" (Init Error: {getattr(self, 'init_error', 'None')})"
+                    yield f"data: {json.dumps({'error': f'No client in summarize_stream{err_ext}'})}\n\n"
+                    return
                 
                 # OpenAI streaming completion is blocking in its generator, but we can wrap it
                 def get_stream():
@@ -892,13 +757,16 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
                 
                 stream = await anyio.to_thread.run_sync(get_stream)
                 
-                parts = []; usage = None
+                parts = []; usage = None; last_chunk_obj = None
                 
                 # Iterating over the stream is blocking
                 while True:
                     try:
                         chunk = await anyio.to_thread.run_sync(next, stream, None)
                         if chunk is None: break
+                        
+                        # Store last chunk for citation extraction
+                        last_chunk_obj = chunk
                         
                         if hasattr(chunk, 'usage') and chunk.usage: 
                             usage = {k:getattr(chunk.usage, k) for k in ['prompt_tokens', 'completion_tokens', 'total_tokens']}
@@ -915,10 +783,20 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
                 if refs_markdown:
                     yield f"data: {json.dumps({'content': refs_markdown})}\n\n"
                 
+                # Extract Perplexity citations from last chunk if available
+                sonar_citations = None
+                if last_chunk_obj:
+                    sonar_citations = self._extract_perplexity_citations(last_chunk_obj)
+                
                 stats = {'done': True, 'duration_seconds': round(time.time()-start, 2), 'model': self.model_name, 'provider': self.provider}
                 if usage:
                     stats['usage'] = usage
                     stats['cost_estimate'] = self._calculate_cost(usage['prompt_tokens'], usage['completion_tokens'])
+                
+                # Add Perplexity citations if available
+                if sonar_citations:
+                    stats['sonar_citations'] = sonar_citations
+                
                 if search_metadata or (search_results and search_results.get("search_metadata")):
                     actual_meta = search_metadata if search_metadata else search_results.get("search_metadata", {})
                     stats['search_enriched'] = actual_meta.get('total_sources', 0) > 0
@@ -974,27 +852,19 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
                         })}\n\n"
         except Exception as e: yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-    def _normalize_output_format(self, text: str) -> str:
-        lines = text.split('\n'); res = []
-        ptr = re.compile(r'^(\d+)[\.\)]\s+([A-Z].{10,})$')
-        for line in lines:
-            m = ptr.match(line.strip())
-            if m: res.extend([f"## {m.group(1)}. {m.group(2)}", "", "---", ""])
-            else: res.append(line)
-        return re.sub(r'\n{4,}', '\n\n\n', '\n'.join(res)).strip()
 
     def elaborate(self, selection: str, query: str, full_context: str = "", history: List[Dict[str, str]] = None) -> Dict:
         if not selection: 
             return {"error": "No text selected"}
 
-        selection = self._sanitize_input(selection, 1000)
-        query = self._sanitize_input(query, 500)
-        full_context = self._sanitize_input(full_context, 5000) if full_context else ""
+        selection = summarizer_utils.sanitize_input(selection, 1000)
+        query = summarizer_utils.sanitize_input(query, 500)
+        full_context = summarizer_utils.sanitize_input(full_context, 5000) if full_context else ""
         
         history_text = ""
         if history:
             formatted_history = [
-                f"{'User' if m.get('role') == 'user' else 'AI'}: {self._sanitize_input(m.get('content', ''), 1000)}" 
+                f"{'User' if m.get('role') == 'user' else 'AI'}: {summarizer_utils.sanitize_input(m.get('content', ''), 1000)}" 
                 for m in history
             ]
             history_text = "\n".join(formatted_history)
@@ -1049,7 +919,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
             content = completion.choices[0].message.content
             
             return {
-                "content": self._clean_output(content),
+                "content": summarizer_utils.clean_output(content),
                 "usage": {
                     "prompt_tokens": usage.prompt_tokens,
                     "completion_tokens": usage.completion_tokens,
@@ -1150,7 +1020,10 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                     "completion_tokens": j_usage_obj.completion_tokens,
                     "total_tokens": j_usage_obj.total_tokens
                 }
-                final_content = self._clean_output(completion.choices[0].message.content)
+                final_content = summarizer_utils.clean_output(completion.choices[0].message.content)
+                
+                # Extract Perplexity citations if available
+                sonar_citations = self._extract_perplexity_citations(completion)
 
             for k in usage_total: 
                 usage_total[k] += j_usage[k]
@@ -1158,7 +1031,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
             avg_duration = sum(durations) / len(durations) if durations else 0
             duration_judge = round(time.time() - start_judge, 2)
 
-            res_content = self._normalize_output_format(final_content)
+            res_content = summarizer_utils.normalize_output_format(final_content)
             
             # Append references
             refs_markdown = self._generate_references_markdown(search_results if search_results else {})
@@ -1176,6 +1049,11 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 "draft_count": len(drafts),
                 "format": "3_sections_consolidated"
             }
+            
+            # Add Perplexity citations if available
+            if sonar_citations:
+                res["sonar_citations"] = sonar_citations
+            
             if search_results and search_results.get("search_metadata"):
                 res["search_metadata"] = search_results["search_metadata"]
                 res["search_sources"] = {
@@ -1375,21 +1253,30 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                     # Final attempt fallback to NON-STREAMING if available
                     yield f"data: {json.dumps({'status': 'Streaming failed. Attempting stable non-streaming synthesis...', 'progress': 90})}\n\n"
                     try:
-                        # Re-use non-streaming summarization logic but with judge prompt
-                        def run_non_stream():
-                            with self._client_lock:
-                                return self.client.chat.completions.create(
-                                    model=self.model_name,
-                                    messages=[{"role": "user", "content": judge_prompt}],
-                                    stream=False
-                                )
-                        
-                        res_obj = await anyio.to_thread.run_sync(run_non_stream)
-                        content = res_obj.choices[0].message.content
-                        u = res_obj.usage
-                        
-                        for k in usage_total: 
-                            usage_total[k] += getattr(u, k, 0)
+                        if self.provider == "Ollama":
+                            # Fallback for Ollama should use its own non-stream logic
+                            res_obj = await anyio.to_thread.run_sync(self._summarize_ollama, judge_prompt, start_judge)
+                            content = res_obj.get("content", "")
+                            u_dict = res_obj.get("usage", {})
+                            for k in usage_total:
+                                usage_total[k] += u_dict.get(k, 0)
+                        else:
+                            if not self.client:
+                                raise BookSummarizerError("AI client not initialized (Fallback)")
+                            
+                            def run_non_stream():
+                                with self._client_lock:
+                                    return self.client.chat.completions.create(
+                                        model=self.model_name,
+                                        messages=[{"role": "user", "content": judge_prompt}],
+                                        stream=False
+                                    )
+                            
+                            res_obj = await anyio.to_thread.run_sync(run_non_stream)
+                            content = res_obj.choices[0].message.content
+                            u = res_obj.usage
+                            for k in usage_total: 
+                                usage_total[k] += getattr(u, k, 0)
                             
                         yield f"data: {json.dumps({'content': content})}\n\n"
                         stats = {
@@ -1539,14 +1426,14 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                 # --- REFINEMENT PHASE ---
                 yield f"data: {json.dumps({'event': 'refine_start', 'status': f'Refining Draft {iter_num}...', 'progress': 25 + (i * 20)})}\n\n"
                 
-                refine_prompt = self._build_refiner_prompt(m["title"], m["author"], current_draft, issues, fixes)
+                refine_prompt = prompt_templates.build_refiner_prompt(m["title"], m["author"], current_draft, issues, fixes)
                 
                 # Run refinement
                 # We use a lower temperature for refinement to stick to instructions
                 refine_res = await self._run_completion(refine_prompt, temperature=0.5)
                 
                 if "content" in refine_res:
-                    current_draft = self._clean_output(refine_res["content"])
+                    current_draft = summarizer_utils.clean_output(refine_res["content"])
                     if "usage" in refine_res:
                          for k in usage_total: usage_total[k] += refine_res["usage"][k]
                          
@@ -1567,7 +1454,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
         final_content = best_draft["content"]
         
         # Normalize format one last time to be sure
-        final_content = self._normalize_output_format(final_content)
+        final_content = summarizer_utils.normalize_output_format(final_content)
         
         # Append references
         refs_markdown = self._generate_references_markdown(search_results if search_results else {})
@@ -1605,7 +1492,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
 
     async def _evaluate_draft_quality(self, title: str, author: str, draft: str, model_override: Optional[str] = None) -> Dict:
         """Runs the Critic prompt and parses JSON output."""
-        prompt = self._build_critic_prompt(title, author, draft)
+        prompt = prompt_templates.build_critic_prompt(title, author, draft)
         
         # Use a specific client if override is provided, otherwise default
         # Simple for now: just use standard client but maybe different model name if we supported switching per request
@@ -1674,88 +1561,4 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
                  "usage": {"prompt_tokens": u.prompt_tokens, "completion_tokens": u.completion_tokens, "total_tokens": u.total_tokens}
              }
 
-    def _build_critic_prompt(self, title: str, author: str, draft: str) -> str:
-        return f"""<role>SENIOR EDITOR & QUALITY CRITIC</role>
-<context>Book: "{title}" by {author}</context>
-<task>Evaluate the following summary draft STRICTLY based on Academic Standards.</task>
-<draft>
-{draft[:8000]}
-</draft>
 
-<scoring_criteria>
-Evaluate the text with strict, zero-tolerance standards.
-
-1. **Density & Precision**
-   - Language must be highly condensed.
-   - No filler, redundancy, rhetorical padding, or vague phrasing.
-   - Every sentence must carry analytical value.
-
-2. **Structure Compliance**
-   - The summary must STRICTLY follow this structure:
-{self.CORE_STRUCTURE_PROMPT}
-   - Headers (##) MUST be in English.
-   - Internal labels MUST be in Indonesian as defined.
-   - Body content MUST be in Indonesian.
-
-3. **Reasoning Rigor**
-   - The "ANALYTICAL FRAMEWORK" section MUST explicitly and separately define:
-     - **Gap**: What is missing, unresolved, or insufficient in existing discourse.
-     - **Methodology**: The analytical approach used to address that gap.
-   - Implicit, vague, or merged explanations are insufficient.
-
-4. **Localization & Language Discipline**
-   - All body content must be written in formal, academic Indonesian.
-   - English headers are mandatory and NOT a violation.
-   - Common professional English technical terms (e.g., "core thesis", "market positioning") are allowed and should NOT be penalized.
-
-5. **Tagging Accuracy**
-   - [Analisis Terintegrasi] tags must be used consistently and correctly.
-   - Incorrect placement, misuse, or omission counts as a structural defect.
-</scoring_criteria>
-
-<calibration>
-- Score < 70  : Fundamental structural or linguistic violations.
-- Score 70–85 : Substantively sound but lacks sharpness, precision, or analytical force.
-- Score 86–90 : Excellent execution with minor, non-structural weaknesses.
-- Score > 90  : Extremely rare. Structurally perfect, linguistically precise, and analytically rigorous.
-</calibration>
-
-<output_schema>
-JSON ONLY:
-{{
-  "score": int,
-  "issues": ["Critical Issue 1", "Critical Issue 2", "Max 3 issues"],
-  "fixes": ["Specific instruction to fix Issue 1", "Specific instruction to fix Issue 2"]
-}}
-</output_schema>"""
-
-    def _build_refiner_prompt(self, title: str, author: str, draft: str, issues: List[str], fixes: List[str]) -> str:
-        issues_str = "\n".join([f"- {i}" for i in issues])
-        fixes_str = "\n".join([f"- {f}" for f in fixes])
-        
-        return f"""<role>EXPERT REWRITER</role>
-<context>Book: "{title}" by {author}</context>
-<task>Refine the draft to address specific critique.</task>
-
-<critique>
-ISSUES:
-{issues_str}
-
-REQUIRED FIXES:
-{fixes_str}
-</critique>
-
-<draft_content>
-{draft}
-</draft_content>
-
-<instructions>
-1. **SCOPE LOCK**: ONLY modify sections related to the issues. Do NOT rewrite parts that are already correct.
-2. **Language & Structure**: 
-{self.CORE_STRUCTURE_PROMPT}
-   - Headers MUST remain in **English** (as shown above).
-   - Body text MUST be in **Formal Indonesian**.
-   - Use the Indonesian labels (Ringkasan Inti, Glosarium Terminologi, etc.) for internal points.
-3. **Keep the 3-Section format intact**.
-4. **Output**: Return the FULL corrected text.
-</instructions>"""
