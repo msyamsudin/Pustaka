@@ -133,42 +133,97 @@ function App() {
 
   // ========== End Custom Hooks ==========
 
+  // ========== Memoized Markdown Components ==========
+  const markdownComponents = React.useMemo(() => ({
+    p: ({ node, ...props }) => <p style={{ marginBottom: '1.2rem', lineHeight: '1.7' }} {...props} />,
+    li: ({ node, ...props }) => <li style={{ marginBottom: '0.5rem' }} {...props} />,
+    h1: ({ node, ...props }) => <h1 style={{ color: 'var(--accent-color)', marginTop: '2rem' }} {...props} />,
+    h2: ({ node, ...props }) => <h2 style={{ color: 'var(--accent-color)', marginTop: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.5rem' }} {...props} />,
+    strong: ({ node, ...props }) => <strong style={{ color: 'var(--text-primary)', fontWeight: '700' }} {...props} />,
+    code({ node, inline, className, children, ...props }) {
+      const content = String(children);
+
+      if (!inline && className === 'language-ref-section') {
+        const items = [];
+        const regex = /(\d+)\.\s+\*\*(.*?)\*\*:\s+\[(.*?)\]\((.*?)\)/g;
+        let match;
+        while ((match = regex.exec(content)) !== null) {
+          items.push({ id: match[1], label: match[2], title: match[3], url: match[4] });
+        }
+
+        if (items.length === 0) return null;
+
+        return (
+          <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
+            <div className="premium-ref-grid">
+              {items.map((item, idx) => (
+                <a
+                  key={idx}
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ref-card-premium stagger-item"
+                  style={{ '--stagger-idx': idx }}
+                >
+                  <div className="ref-card-main-title">{item.title}</div>
+                  <div className="ref-card-footer-url">
+                    {new URL(item.url || 'http://localhost').hostname}
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      return <code className={className} {...props}>{children}</code>;
+    }
+  }), []);
+
   // Editor Toolbar Handler
   const handleFormat = (command) => {
     applyMarkdownFormat(command, noteReviewTextareaRef.current, noteReviewContent, setNoteReviewContent);
   };
 
-  // Selection Handler
+  // Selection Handler - Optimized to prevent immediate disappearance
   useEffect(() => {
-    const handleSelectionChange = () => {
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0 || selection.toString().trim() === '') {
-        // Only clear if we are NOT interacting with the elaboration panel
-        if (!showElaborationPanel) {
-          setSelectionContext(null);
-        }
-        return;
-      }
+    let selectionTimeout;
 
-      // Check if selection is within markdown content
-      const markdownEl = document.querySelector('.markdown-content');
-      if (markdownEl && markdownEl.contains(selection.anchorNode)) {
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        setSelectionContext({
-          text: selection.toString(),
-          rect: {
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            height: rect.height
+    const handleSelectionChange = () => {
+      // Clear any pending updates to avoid rapid re-renders during active selection
+      if (selectionTimeout) clearTimeout(selectionTimeout);
+
+      selectionTimeout = setTimeout(() => {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0 || selection.toString().trim() === '') {
+          if (!showElaborationPanel) {
+            setSelectionContext(null);
           }
-        });
-      }
+          return;
+        }
+
+        const markdownEl = document.querySelector('.markdown-content');
+        if (markdownEl && markdownEl.contains(selection.anchorNode)) {
+          const range = selection.getRangeAt(0);
+          const rect = range.getBoundingClientRect();
+
+          setSelectionContext({
+            text: selection.toString(),
+            rect: {
+              top: rect.top,
+              left: rect.left,
+              width: rect.width,
+              height: rect.height
+            }
+          });
+        }
+      }, 100); // 100ms debounce
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
-    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      if (selectionTimeout) clearTimeout(selectionTimeout);
+    };
   }, [showElaborationPanel]);
 
   const handleElaborate = async () => {
@@ -1723,51 +1778,7 @@ function App() {
               ) : (
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
-                  components={{
-                    p: ({ node, ...props }) => <p style={{ marginBottom: '1.2rem', lineHeight: '1.7' }} {...props} />,
-                    li: ({ node, ...props }) => <li style={{ marginBottom: '0.5rem' }} {...props} />,
-                    h1: ({ node, ...props }) => <h1 style={{ color: 'var(--accent-color)', marginTop: '2rem' }} {...props} />,
-                    h2: ({ node, ...props }) => <h2 style={{ color: 'var(--accent-color)', marginTop: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.5rem' }} {...props} />,
-                    strong: ({ node, ...props }) => <strong style={{ color: 'var(--text-primary)', fontWeight: '700' }} {...props} />,
-                    code({ node, inline, className, children, ...props }) {
-                      const content = String(children);
-
-                      if (!inline && className === 'language-ref-section') {
-                        const inner = content;
-                        const items = [];
-                        const regex = /(\d+)\.\s+\*\*(.*?)\*\*:\s+\[(.*?)\]\((.*?)\)/g;
-                        let match;
-                        while ((match = regex.exec(inner)) !== null) {
-                          items.push({ id: match[1], label: match[2], title: match[3], url: match[4] });
-                        }
-
-                        if (items.length === 0) return null;
-
-                        return (
-                          <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
-                            <div className="premium-ref-grid">
-                              {items.map((item, idx) => (
-                                <a
-                                  key={idx}
-                                  href={item.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="ref-card-premium stagger-item"
-                                  style={{ '--stagger-idx': idx }}
-                                >
-                                  <div className="ref-card-main-title">{item.title}</div>
-                                  <div className="ref-card-footer-url">
-                                    {new URL(item.url || 'http://localhost').hostname}
-                                  </div>
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      }
-                      return <code className={className} {...props}>{children}</code>;
-                    }
-                  }}
+                  components={markdownComponents}
                 >
                   {summary ? summary.replace(/\[REF_SECTION\]([\s\S]*?)\[\/REF_SECTION\]/g, '\n\n```ref-section\n$1\n```\n\n') : ""}
                 </ReactMarkdown>
