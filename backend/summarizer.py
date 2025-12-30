@@ -1306,6 +1306,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
         Iterative Self-Correction Mode:
         Draft -> Critic (Score) -> Refine -> Loop until Target Score or Max Iterations.
         """
+        start_time = time.time()
         if not book_metadata:
             yield f"data: {json.dumps({'error': 'Empty metadata'})}\n\n"
             return
@@ -1470,7 +1471,7 @@ User Question: "{query if query else 'Jelaskan konsep ini lebih detail dan berik
             'model': self.model_name,
             'provider': self.provider,
             'cost_estimate': self._calculate_cost(usage_total.get('prompt_tokens', 0), usage_total.get('completion_tokens', 0)),
-            'duration_seconds': 0, # Placeholder
+            'duration_seconds': round(time.time() - start_time, 2),
             'is_enhanced': True,
             'draft_count': iter_num,
             'final_score': best_draft["score"],

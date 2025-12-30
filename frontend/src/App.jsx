@@ -1854,7 +1854,7 @@ function App() {
                       }
                     </span>
                   )}
-                  {usageStats?.duration_seconds && (
+                  {usageStats?.duration_seconds > 0 && (
                     <span className="badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
                       Waktu: {usageStats.duration_seconds}s
                     </span>
