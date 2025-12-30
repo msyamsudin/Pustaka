@@ -1,4 +1,8 @@
 # Pustaka+
+
+<img width="1317" height="941" alt="image" src="https://github.com/user-attachments/assets/cb084b99-a1c3-49cc-b1c8-4e4d1f8b4127" />
+
+
 Aplikasi yang berfungsi untuk mensintesis beragam konsep kunci hingga nilai aplikatif menggunakan bantuan AI.
 
 ## Fitur Utama
