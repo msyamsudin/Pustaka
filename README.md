@@ -2,9 +2,6 @@
 
 <img width="1317" height="941" alt="image" src="https://github.com/user-attachments/assets/cb084b99-a1c3-49cc-b1c8-4e4d1f8b4127" />
 
-
-Aplikasi yang berfungsi untuk mensintesis beragam konsep kunci hingga nilai aplikatif menggunakan bantuan AI.
-
 ## Fitur Utama
 - **Analytical Briefing Engine**: Menghasilkan analisis mendalam dengan struktur **3-bagian utama** (*Executive Summary & Core Thesis*, *Analytical Framework*, dan *Market & Intellectual Positioning*) yang fokus pada logika argumen dan posisi intelektual karya.
 - **Section-by-Section Synthesis**: Sebuah proses yang menggabungkan berbagai versi rangkuman dengan membedah tiap bagian secara independen untuk menjaga detail data dan struktur hasil akhir.
