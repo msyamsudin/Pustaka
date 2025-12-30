@@ -1,0 +1,17 @@
+:root {
+    --bg-color: #09090b;
+    /* Zinc 950 */
+    --text-primary: #fafafa;
+    /* Zinc 50 */
+    --text-secondary: #a1a1aa;
+    /* Zinc 400 */
+    --accent-color: #fafafa;
+    /* White accent for contrast */
+    --border-color: #27272a;
+    /* Zinc 800 */
+    --card-bg: #18181b;
+    /* Zinc 900 */
+    --success: #10b981;
+    --error: #ef4444;
+    --warning: #f59e0b;
+}
