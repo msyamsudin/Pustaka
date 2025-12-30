@@ -691,10 +691,12 @@ function App() {
                   cost_estimate: data.cost_estimate || { total_usd: 0, total_idr: 0, is_free: true },
                   duration_seconds: data.duration_seconds,
                   is_enhanced: data.is_enhanced,
-                  draft_count: data.draft_count
+                  draft_count: data.draft_count,
+                  format: data.format
                 });
                 if (data.is_enhanced) {
-                  showToast("Kualitas ditingkatkan via Refining Mode", "success");
+                  const modeName = data.format === 'iterative_refined' ? 'Iterative Self-Correction' : 'Analytical Refining';
+                  showToast(`Kualitas ditingkatkan via ${modeName}`, "success");
                 }
                 if (data.search_sources) {
                   setSearchSources(data.search_sources);
@@ -1854,7 +1856,11 @@ function App() {
                   )}
                   {usageStats?.is_enhanced && (
                     <span className="badge" style={{ background: 'rgba(212, 175, 55, 0.1)', color: '#d4af37', border: '1px solid rgba(212, 175, 55, 0.3)' }}>
-                      <Sparkles size={12} style={{ marginRight: '4px' }} /> High Quality ({usageStats.draft_count} draf)
+                      <Sparkles size={12} style={{ marginRight: '4px' }} />
+                      {usageStats.format === 'iterative_refined'
+                        ? `Iterative Mode (${usageStats.draft_count} Iterations)`
+                        : `Refining Mode (${usageStats.draft_count} Drafts)`
+                      }
                     </span>
                   )}
                   {usageStats?.is_synthesis && (
