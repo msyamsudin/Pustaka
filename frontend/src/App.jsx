@@ -86,7 +86,6 @@ function App() {
     tokensReceived, setTokensReceived, progress, setProgress,
     abortControllerRef, iterativeStats, setIterativeStats,
     searchSources, setSearchSources, showSearchSources, setShowSearchSources,
-    sonarCitations, setSonarCitations,
     isUpdated, setIsUpdated,
     isSelectionMode, setIsSelectionMode, selectedVariantIds, setSelectedVariantIds,
     versions, setVersions, activeVersionIndex, setActiveVersionIndex,
@@ -621,7 +620,6 @@ function App() {
       setTokensReceived(0);
       setProgress(0);
       setSearchSources(null);
-      setSonarCitations(null);
       setShowSearchSources(false);
       setIterativeStats(null); // Reset stats
       setVersions([]);
@@ -724,10 +722,6 @@ function App() {
                 }
                 if (data.search_sources) {
                   setSearchSources(data.search_sources);
-                }
-                // Parse Perplexity Sonar citations if available
-                if (data.sonar_citations) {
-                  setSonarCitations(data.sonar_citations);
                 }
               }
 
@@ -1780,68 +1774,6 @@ function App() {
               )}
             </div>
 
-            {/* Perplexity Sonar Citations Display */}
-            {sonarCitations && sonarCitations.citations && sonarCitations.citations.length > 0 && (
-              <div className="premium-ref-container animate-slide-up" style={{ margin: '2rem 0', width: '100%', clear: 'both' }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  marginBottom: '1rem',
-                  paddingBottom: '0.5rem',
-                  borderBottom: '1px solid var(--border-color)'
-                }}>
-                  <Sparkles size={16} style={{ color: 'var(--accent-color)' }} />
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
-                    Sonar Citations
-                  </h3>
-                  <span className="badge" style={{
-                    background: 'rgba(147, 51, 234, 0.1)',
-                    color: '#9333ea',
-                    border: '1px solid rgba(147, 51, 234, 0.2)',
-                    fontSize: '0.7rem'
-                  }}>
-                    {sonarCitations.total_count} sources
-                  </span>
-                </div>
-                <div className="premium-ref-grid">
-                  {sonarCitations.citations.map((citation, idx) => (
-                    <a
-                      key={idx}
-                      href={citation.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ref-card-premium stagger-item"
-                      style={{ '--stagger-idx': idx }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        <span style={{
-                          fontSize: '0.7rem',
-                          fontWeight: '700',
-                          color: 'var(--accent-color)',
-                          background: 'rgba(147, 51, 234, 0.1)',
-                          padding: '0.1rem 0.4rem',
-                          borderRadius: '4px'
-                        }}>
-                          [{citation.index}]
-                        </span>
-                        <div className="ref-card-main-title" style={{ flex: 1 }}>
-                          {citation.title}
-                        </div>
-                      </div>
-                      {citation.published_date && (
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                          📅 {citation.published_date}
-                        </div>
-                      )}
-                      <div className="ref-card-footer-url">
-                        {new URL(citation.url).hostname}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {summarizing && summary && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)' }}>

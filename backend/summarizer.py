@@ -397,97 +397,6 @@ class BookSummarizer:
         lines.append("[/REF_SECTION]")
         return "\n".join(lines)
 
-    def _extract_perplexity_citations(self, completion_obj) -> Optional[Dict]:
-        """
-        Extracts citations from Perplexity Sonar API response.
-        Perplexity provides citations in the response object, either as:
-        - 'citations': array of URLs
-        - 'search_results': object with detailed metadata (title, url, published_date)
-        
-        Returns structured citation data or None if not a Perplexity model.
-        Note: OpenRouter may not pass through Perplexity citations metadata.
-        """
-        # Only process for Perplexity/Sonar models
-        if not self.model_name or not any(keyword in self.model_name.lower() for keyword in ['perplexity', 'sonar']):
-            return None
-        
-        try:
-            # Check if completion object has citations or search_results
-            citations_data = None
-            
-            # Try to get from completion object attributes
-            if hasattr(completion_obj, 'citations'):
-                citations_data = {'citations': completion_obj.citations}
-            elif hasattr(completion_obj, 'search_results'):
-                citations_data = {'search_results': completion_obj.search_results}
-            
-            # Also check in the raw response if available
-            if not citations_data and hasattr(completion_obj, 'model_extra'):
-                extra = completion_obj.model_extra or {}
-                if 'citations' in extra:
-                    citations_data = {'citations': extra['citations']}
-                elif 'search_results' in extra:
-                    citations_data = {'search_results': extra['search_results']}
-            
-            # Check in choices[0].message or delta if available
-            if not citations_data and hasattr(completion_obj, 'choices'):
-                if completion_obj.choices and len(completion_obj.choices) > 0:
-                    choice = completion_obj.choices[0]
-                    
-                    # For non-streaming responses (ChatCompletion)
-                    if hasattr(choice, 'message'):
-                        message = choice.message
-                        if hasattr(message, 'citations'):
-                            citations_data = {'citations': message.citations}
-                    
-                    # For streaming responses (ChatCompletionChunk) - check delta
-                    elif hasattr(choice, 'delta'):
-                        delta = choice.delta
-                        if hasattr(delta, 'citations'):
-                            citations_data = {'citations': delta.citations}
-            
-            if not citations_data:
-                return None
-            
-            # Process citations into structured format
-            structured_citations = []
-            
-            # Handle 'citations' array format (simple URLs)
-            if 'citations' in citations_data and isinstance(citations_data['citations'], list):
-                for idx, url in enumerate(citations_data['citations'], 1):
-                    if url:
-                        structured_citations.append({
-                            'index': idx,
-                            'url': url,
-                            'title': f'Source {idx}',  # Fallback title
-                            'type': 'citation'
-                        })
-            
-            # Handle 'search_results' format (detailed metadata)
-            elif 'search_results' in citations_data and isinstance(citations_data['search_results'], list):
-                for idx, result in enumerate(citations_data['search_results'], 1):
-                    if isinstance(result, dict):
-                        structured_citations.append({
-                            'index': idx,
-                            'url': result.get('url', ''),
-                            'title': result.get('title', f'Source {idx}'),
-                            'published_date': result.get('published_date', ''),
-                            'type': 'search_result'
-                        })
-            
-            if structured_citations:
-                print(f"[SONAR_CITATIONS] Extracted {len(structured_citations)} citations from Perplexity response")
-                return {
-                    'provider': 'perplexity_sonar',
-                    'model': self.model_name,
-                    'citations': structured_citations,
-                    'total_count': len(structured_citations)
-                }
-            
-        except Exception as e:
-            print(f"[SONAR_CITATIONS_ERROR] Failed to extract citations: {e}")
-        
-        return None
 
     def _calculate_cost(self, p_t: int, c_t: int) -> Dict:
         if self.model_name.endswith(":free"): return {"total_usd": 0.0, "total_idr": 0, "currency": "USD", "is_free": True}
@@ -582,8 +491,6 @@ class BookSummarizer:
             with self._client_lock:
                 c = self.client.chat.completions.create(model=self.model_name, messages=[{"role": "user", "content": p}])
             
-            # Extract Perplexity citations if available
-            sonar_citations = self._extract_perplexity_citations(c)
             
             u = c.usage
             final_content = summarizer_utils.normalize_output_format(summarizer_utils.clean_output(c.choices[0].message.content))
@@ -601,9 +508,6 @@ class BookSummarizer:
                 "duration_seconds": round(time.time() - start, 2)
             }
             
-            # Add Perplexity citations if available
-            if sonar_citations:
-                res["sonar_citations"] = sonar_citations
             
             if search_results and search_results.get("search_metadata"):
                 res["search_metadata"] = search_results["search_metadata"]
@@ -783,19 +687,12 @@ RESPONSE ONLY WITH THE JSON OBJECT."""
                 if refs_markdown:
                     yield f"data: {json.dumps({'content': refs_markdown})}\n\n"
                 
-                # Extract Perplexity citations from last chunk if available
-                sonar_citations = None
-                if last_chunk_obj:
-                    sonar_citations = self._extract_perplexity_citations(last_chunk_obj)
                 
                 stats = {'done': True, 'duration_seconds': round(time.time()-start, 2), 'model': self.model_name, 'provider': self.provider}
                 if usage:
                     stats['usage'] = usage
                     stats['cost_estimate'] = self._calculate_cost(usage['prompt_tokens'], usage['completion_tokens'])
                 
-                # Add Perplexity citations if available
-                if sonar_citations:
-                    stats['sonar_citations'] = sonar_citations
                 
                 if search_metadata or (search_results and search_results.get("search_metadata")):
                     actual_meta = search_metadata if search_metadata else search_results.get("search_metadata", {})

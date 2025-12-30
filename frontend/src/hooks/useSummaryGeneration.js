@@ -27,8 +27,6 @@ export const useSummaryGeneration = () => {
     const [searchSources, setSearchSources] = useState(null);
     const [showSearchSources, setShowSearchSources] = useState(false);
 
-    // Sonar Citations (Perplexity)
-    const [sonarCitations, setSonarCitations] = useState(null);
 
     // Visual Feedback
     const [isUpdated, setIsUpdated] = useState(false);
@@ -50,7 +48,6 @@ export const useSummaryGeneration = () => {
         setVersions([]);
         setActiveVersionIndex(-1);
         setSearchSources(null);
-        setSonarCitations(null);
         setIsUpdated(false);
         setIsSelectionMode(false);
         setSelectedVariantIds([]);
@@ -94,9 +91,6 @@ export const useSummaryGeneration = () => {
         showSearchSources,
         setShowSearchSources,
 
-        // Sonar Citations
-        sonarCitations,
-        setSonarCitations,
 
         // Visual
         isUpdated,
