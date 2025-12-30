@@ -80,8 +80,9 @@ const IterativeProgress = ({ stats }) => {
                     return (
                         <motion.div key={i} animate={animate}
                             transition={{
-                                duration: phase === 'analyze' ? Math.random() + 0.5 : 1.5,
-                                repeat: Infinity, delay: (r * 0.1 + c * 0.1)
+                                duration: isComplete ? 0.5 : (phase === 'analyze' ? Math.random() + 0.5 : 1.5),
+                                repeat: isComplete ? 0 : Infinity,
+                                delay: isComplete ? 0 : (r * 0.1 + c * 0.1)
                             }}
                             style={{ width: '8px', height: '8px', borderRadius: '1.5px', backgroundColor: '#111' }}
                         />
@@ -103,14 +104,14 @@ const IterativeProgress = ({ stats }) => {
             }}>
                 <h3 style={{ margin: 0, fontSize: '0.9rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '0.5px' }}>
                     <Grid3X3 size={14} style={{ color: isComplete ? '#4bffc3ff' : 'var(--accent-color)' }} />
-                    <span>CORE_REFINEMENT_SYSTEM</span>
+                    <span>Self Correction Mode</span>
                 </h3>
                 <div style={{
                     fontSize: '0.7rem', fontWeight: 'bold', fontFamily: 'monospace',
                     background: '#111', padding: '3px 10px', borderRadius: '4px', border: '1px solid #222',
                     color: isComplete ? '#4bffc3ff' : '#666'
                 }}>
-                    {isComplete ? "DONE" : `CYC_${iteration}_3`}
+                    {isComplete ? "DONE" : `Cycle ${iteration}/3`}
                 </div>
             </div>
 
