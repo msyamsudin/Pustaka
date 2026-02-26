@@ -87,13 +87,30 @@ Jika sumber material tidak cukup untuk menghasilkan output berkualitas:
 
 CORE_RULES_WITH_EXAMPLES = """
 <core_rules_with_examples>
-## CONTOH ABSTRAK (Multi-Domain)
+## STRUCTURAL FEW-SHOT EXAMPLES
 
-**Domain A (Ekonomi Politik):**
-• **Liberalisasi pasar 1990 menciptakan ketimpangan struktural** → melalui penghapusan subsidi input yang disproportionately menguntungkan aktor besar → memicu deindustrialisasi dini [Scope: Manufaktur menengah-bawah].
+<example_section_1a>
+CORRECT Section 1a:
+"Karya ini mengajukan argumen bahwa kegagalan kebijakan industri pasca-1998 bukan disebabkan oleh defisit kapasitas teknis, melainkan oleh fragmentasi koordinasi antara kementerian yang memiliki insentif bertentangan [Textual]. Dengan menggunakan kerangka principal-agent yang dimodifikasi, penulis menunjukkan bahwa..."
 
-**Domain B (Sosiologi):**
-• **Solidaritas mekanik dalam komunitas digital bersifat rapuh** → melalui ketergantungan pada algoritma kurasi yang mengurangi kohesi spontan → menghasilkan fragmentasi identitas yang persisten [Scope: Platform media sosial, 2010-2020].
+INCORRECT Section 1a (DO NOT DO THIS):
+"Buku ini membahas berbagai aspek kebijakan industri. Pertama, penulis menjelaskan latar belakang. Kedua, analisis dilakukan terhadap..."
+[VIOLATION: Menggunakan implied list structure, tidak ada core claim]
+</example_section_1a>
+
+<example_section_1b>
+CORRECT Section 1b:
+• [Liberalisasi pasar 1990 menciptakan ketimpangan struktural] → melalui [penghapusan subsidi input yang disproportionately menguntungkan aktor besar] → memicu [deindustrialisasi dini] [Scope: Manufaktur menengah-bawah].
+</example_section_1b>
+
+<example_section_3>
+CORRECT Section 3 — Posisi Komparatif:
+"Berbeda dari pendekatan Acemoglu & Robinson (2012) yang menekankan institusi formal sebagai determinan utama, karya ini berposisi pada kutub 'agency-centered' dengan argumen bahwa aktor birokrasi memiliki diskresi yang cukup untuk mengubah hasil tanpa reformasi institusional formal [Interpretative Positioning]."
+
+INCORRECT (DO NOT DO THIS):
+"Buku ini menawarkan perspektif yang berbeda dan lebih komprehensif dibandingkan karya-karya sebelumnya dalam bidang ini."
+[VIOLATION: Klaim diferensiasi tanpa referensi spesifik, promotional tone]
+</example_section_3>
 
 ## GUIDELINES
 - ✅ VALID: Mengidentifikasi "regulatory capture" (textual) sebagai mekanisme kegagalan.
@@ -101,6 +118,41 @@ CORE_RULES_WITH_EXAMPLES = """
 - ✅ VALID: Konsep "embedded liberalism" [Interpretative Construct] mendasari Bab 3.
 </core_rules_with_examples>
 """
+
+# =========================================================
+# LAYER 4: PROTOCOLS
+# =========================================================
+
+SCORING_PROTOCOL = """
+<scoring_protocol>
+Mulai dari 100. Kurangi berdasarkan pelanggaran:
+- Fabricated claim: -25 per instance (maks pengurangan: -75)
+- Unlabeled interpretative construct: -10 per instance (maks: -30)
+- Section 1a mengandung bullets: -15 (flat)
+- Section 3 tanpa sumbu komparatif: -20 (flat)
+- Promotional language: -5 per instance (maks: -20)
+- Full English paragraph: -10 per instance (maks: -20)
+
+Score final = 100 - total deductions (minimum 0).
+Sertakan breakdown pengurangan di JSON response:
+"score_breakdown": {"fabrication": -25, "unlabeled_constructs": -10, ...}
+</scoring_protocol>
+"""
+
+CONFLICT_RESOLUTION_PROTOCOL = """
+<conflict_resolution_protocol>
+STEP 1: Analysis — Tulis analisis konflik di dalam tag <scratchpad>...</scratchpad>.
+[CONFLICT LOG]
+- Klaim A (Draft 1): "..." | Evidence basis: empirical/normative/case
+- Klaim B (Draft 2): "..." | Evidence basis: empirical/normative/case
+- Decision: Pilih A karena [alasan spesifik] / Gabungkan karena [alasan]
+[END LOG]
+
+STEP 2: Synthesis — Tulis Master Summary TANPA menyertakan apapun dari scratchpad.
+Apapun di dalam <scratchpad> TIDAK boleh muncul di output final.
+</conflict_resolution_protocol>
+"""
+
 
 VALIDATION_CHECKLIST = """
 <validation_checklist>

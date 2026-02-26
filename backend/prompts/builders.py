@@ -14,7 +14,9 @@ from .policies import (
     FALLBACK_CONDITIONS,
     ESCAPE_HATCH_PROTOCOL,
     CORE_RULES_WITH_EXAMPLES,
-    VALIDATION_CHECKLIST
+    VALIDATION_CHECKLIST,
+    SCORING_PROTOCOL,
+    CONFLICT_RESOLUTION_PROTOCOL
 )
 from .templates import CORE_STRUCTURE_PROMPT
 
@@ -66,18 +68,19 @@ Data Source   : {source}
 Description   : {context_preview}
 </document_metadata>
 
-{META_INSTRUCTION}
-
-{PRIORITY_HIERARCHY}
-
 <role_definition>
-You are a PRINCIPAL INTELLIGENCE ANALYST specializing in high-density text compression
-with strict epistemic discipline. Your output will be used for scholarly reference.
+You are a PRINCIPAL INTELLIGENCE ANALYST. Your known failure modes to avoid:
+- Producing promotional summaries that omit critical tensions.
+- Filling data gaps with plausible-sounding fabrications.
+- Conflating the author's claims with your own interpretations.
+- Using hedging language as decoration rather than epistemic signal.
 </role_definition>
 
 # =========================================================
-# LAYER 1: ANALYTICAL RULES
+# LAYER 1: ANALYTICAL RULES & PRE-FLIGHT CHECK
 # =========================================================
+{VALIDATION_CHECKLIST}
+
 {EPISTEMIC_CONTROL_POLICY}
 {FALLBACK_CONDITIONS}
 {ESCAPE_HATCH_PROTOCOL}
@@ -90,17 +93,16 @@ Analyze the provided text and generate a structured analytical summary following
 the template below.
 </task>
 
-{search_context if search_context else ""}
+{f"<search_context>{search_context}</search_context>" if search_context else ""}
 
 <output_structure>
 {CORE_STRUCTURE_PROMPT}
 </output_structure>
 
 # =========================================================
-# LAYER 3: EXAMPLES & VALIDATION
+# LAYER 3: EXAMPLES
 # =========================================================
 {CORE_RULES_WITH_EXAMPLES}
-{VALIDATION_CHECKLIST}
 
 <final_reminder>
 Before submitting:
@@ -146,19 +148,24 @@ def build_judge_prompt(
     prompt = f"""
 <role>SENIOR CHIEF EDITOR — Final Synthesis</role>
 
+<role_definition>
+Your known failure modes to avoid in synthesis:
+- Merging conflicting claims without evaluation.
+- Losing analytical density by choosing the "middle ground".
+- Omitting specific evidence from one draft in favor of generic summary in another.
+</role_definition>
+
 {META_INSTRUCTION}
 {PRIORITY_HIERARCHY}
 
+{CONFLICT_RESOLUTION_PROTOCOL}
+
 <task>
 Synthesize multiple draft candidates into ONE epistemically sound Master Summary.
-
-SYNTHESIS PROTOCOL:
-1. Identify overlapping claims → verify against source → include if verified
-2. Identify conflicting claims → document conflict OR choose most evidenced
-3. Identify unique claims → evaluate epistemic basis → include if sound
-4. Consolidate redundancy → preserve analytical density
-5. Apply validation checklist → ensure all structural requirements met
+Use the [CONFLICT LOG] to document evaluation of differing claims.
 </task>
+
+{VALIDATION_CHECKLIST}
 
 <input_drafts>
 {formatted}
@@ -171,7 +178,6 @@ SYNTHESIS PROTOCOL:
 {EPISTEMIC_CONTROL_POLICY}
 {FALLBACK_CONDITIONS}
 {ESCAPE_HATCH_PROTOCOL}
-{VALIDATION_CHECKLIST}
 """
     validate_prompt_length(prompt)
     return prompt
@@ -180,10 +186,10 @@ SYNTHESIS PROTOCOL:
 def build_section_synthesis_prompt(
     name: str, 
     contents: List[str], 
-    t: str, 
-    a: str, 
-    g: str, 
-    y: Union[int, str], 
+    title: str, 
+    author: str, 
+    genre: str, 
+    year: Union[int, str], 
     full: bool, 
     hints: dict
 ) -> str:
@@ -195,7 +201,7 @@ def build_section_synthesis_prompt(
         [f"═══ SOURCE FRAGMENT {i+1} ═══\n{c}" for i, c in enumerate(valid_contents)]
     )
 
-    hint = hints.get(name, "Synthesize with maximal epistemic discipline.")
+    hint = (hints or {}).get(name, "Synthesize with maximal epistemic discipline.")
 
     prompt = f"""
 <role>SECTION EDITOR — Focused Synthesis</role>
@@ -204,7 +210,7 @@ def build_section_synthesis_prompt(
 {PRIORITY_HIERARCHY}
 
 <context>
-Book: "{t}" by {a} | Genre: {g} | Year: {y}
+Book: "{title}" by {author} | Genre: {genre} | Year: {year}
 Target Section: {name}
 </context>
 
@@ -239,13 +245,23 @@ def build_critic_prompt(title: str, author: str, draft: str) -> str:
     return f"""
 <role>ACADEMIC PEER REVIEWER — Epistemic Audit</role>
 
-{META_INSTRUCTION}
-{PRIORITY_HIERARCHY}
+<role_definition>
+Your known failure modes to avoid in auditing:
+- Overlooking unlabeled interpretative constructs.
+- Giving high scores to structurally sound but analytically shallow drafts.
+- Failing to identify subtly fabricated claims.
+</role_definition>
+
 {EPISTEMIC_CONTROL_POLICY}
+{SCORING_PROTOCOL}
 
 <task>
-Audit draft for structural, analytical, and epistemic violations. Return JSON.
+Audit draft for structural, analytical, and epistemic violations. 
+Use the deduction-based [scoring_protocol] for the numeric score.
+Return JSON.
 </task>
+
+{VALIDATION_CHECKLIST}
 
 <draft_to_evaluate>
 {truncated_draft}
@@ -269,14 +285,20 @@ def build_refiner_prompt(title: str, author: str, draft: str, issues: List[str],
     issues_block = "\n".join([f"- {i}" for i in issues]) if issues else "[No issues]"
     fixes_block = "\n".join([f"+ {f}" for f in fixes]) if fixes else "[No fixes]"
 
-    return f"""
+    prompt = f"""
 <role>SENIOR REVISIONIST — Surgical Correction</role>
 
-{META_INSTRUCTION}
+<role_definition>
+Your known failure modes to avoid in refining:
+- Introducing new errors while fixing old ones.
+- Over-correcting style at the expense of epistemic precision.
+- Ignoring specific critic instructions.
+</role_definition>
+
 {PRIORITY_HIERARCHY}
-{EPISTEMIC_CONTROL_POLICY}
-{FALLBACK_CONDITIONS}
 {ESCAPE_HATCH_PROTOCOL}
+
+{VALIDATION_CHECKLIST}
 
 <critique_report>
 ISSUES: {issues_block}
@@ -292,6 +314,6 @@ FIXES: {fixes_block}
 - Preserve analytical integrity.
 - Output final publication-ready Indonesian text.
 </revision_instructions>
-
-{VALIDATION_CHECKLIST}
 """
+    validate_prompt_length(prompt)
+    return prompt
