@@ -4,7 +4,7 @@ from typing import Dict, Optional
 
 CONFIG_FILE = "user_config.json"
 
-class ConfigManager:
+class UserPrefsManager:
     def __init__(self):
         self.config_file = CONFIG_FILE
         self._ensure_config_exists()

@@ -1,102 +1,153 @@
+from typing import List, Optional, Union
+from engine_params import (
+    DRAFT_TRUNCATION_FULL,
+    DRAFT_TRUNCATION_PARTIAL,
+    CRITIC_DRAFT_CHAR_LIMIT,
+    CONTEXT_PREVIEW_CHARS,
+    AVG_CHARS_PER_TOKEN
+)
+from utils import estimate_tokens, safe_truncate, validate_prompt_length
 from .policies import (
+    META_INSTRUCTION,
     PRIORITY_HIERARCHY,
-    CORE_RULES_WITH_EXAMPLES,
     EPISTEMIC_CONTROL_POLICY,
+    FALLBACK_CONDITIONS,
     ESCAPE_HATCH_PROTOCOL,
+    CORE_RULES_WITH_EXAMPLES,
     VALIDATION_CHECKLIST
 )
 from .templates import CORE_STRUCTURE_PROMPT
 
 # =========================================================
+# INTERNAL HELPERS
+# =========================================================
+
+def _format_draft_candidates(drafts: List[str]) -> str:
+    """Standardized formatting for multiple LLM responses."""
+    valid_drafts = [d.strip() for d in drafts if d and str(d).strip()]
+    if not valid_drafts:
+        return "[NO VALID DRAFTS PROVIDED]"
+    
+    return "\n\n".join(
+        [f"═══ DRAFT CANDIDATE {i+1} ═══\n{d}" for i, d in enumerate(valid_drafts)]
+    )
+
+def _validate_core_metadata(title: str, author: str):
+    """Raise error if basic metadata is missing."""
+    if not title or not author:
+        raise ValueError("Title and Author are mandatory fields for prompt generation.")
+
+# =========================================================
 # ENHANCED PROMPT BUILDERS
 # =========================================================
 
-def build_summarize_prompt(title, author, genre, year, context, source, partial=None, search_context=None):
-    """Enhanced version with examples and hierarchy"""
-    intro = f"""
+def build_summarize_prompt(
+    title: str, 
+    author: str, 
+    genre: str, 
+    year: Union[int, str], 
+    context: str, 
+    source: str, 
+    partial: Optional[str] = None, 
+    search_context: Optional[str] = None
+) -> str:
+    """Enhanced version with 3-layer architecture, examples, and meta-instructions."""
+    _validate_core_metadata(title, author)
+    
+    context_preview = context[:CONTEXT_PREVIEW_CHARS] if context else "[Not available]"
+    
+    prompt = f"""
 <document_metadata>
 Title         : {title}
 Author        : {author}
 Published Year: {year}
 Genre/Category: {genre}
 Data Source   : {source}
-Description   : {context[:500] if context else "[Not available]"}
+Description   : {context_preview}
 </document_metadata>
 
+{META_INSTRUCTION}
+
 {PRIORITY_HIERARCHY}
-{CORE_RULES_WITH_EXAMPLES}
-{EPISTEMIC_CONTROL_POLICY}
-{ESCAPE_HATCH_PROTOCOL}
 
 <role_definition>
 You are a PRINCIPAL INTELLIGENCE ANALYST specializing in high-density text compression
 with strict epistemic discipline. Your output will be used for scholarly reference.
-
-Core Competencies:
-- Analytical rigor: separate data from interpretation
-- Structural clarity: logical flow over narrative color
-- Epistemic humility: acknowledge uncertainty explicitly
-- Linguistic precision: clarity > language purity
 </role_definition>
 
-{search_context if search_context else ""}
+# =========================================================
+# LAYER 1: ANALYTICAL RULES
+# =========================================================
+{EPISTEMIC_CONTROL_POLICY}
+{FALLBACK_CONDITIONS}
+{ESCAPE_HATCH_PROTOCOL}
 
+# =========================================================
+# LAYER 2: OUTPUT FORMAT
+# =========================================================
 <task>
 Analyze the provided text and generate a structured analytical summary following
-the template below. Prioritize epistemic accuracy over stylistic preferences.
+the template below.
 </task>
+
+{search_context if search_context else ""}
 
 <output_structure>
 {CORE_STRUCTURE_PROMPT}
 </output_structure>
 
+# =========================================================
+# LAYER 3: EXAMPLES & VALIDATION
+# =========================================================
+{CORE_RULES_WITH_EXAMPLES}
 {VALIDATION_CHECKLIST}
 
 <final_reminder>
 Before submitting:
 1. Run through validation checklist
 2. Verify no fabricated content
-3. Check all interpretative constructs are labeled
-4. Ensure at least ONE comparative axis in Section 3
-5. Confirm first paragraph is 100-150 words with NO bullet points
+3. Ensure Section 1a is narrative ONLY and Section 1b is logical chain ONLY
+4. Confirm at least ONE comparative axis in Section 3
+5. Apply Fallback Conditions if data is insufficient
 </final_reminder>
 """
     
     if partial:
-        intro += f"""
+        prompt += f"""
 <recovery_mode>
 PREVIOUS OUTPUT EXISTS. INCOMPLETE SECTION DETECTED.
 
 INSTRUCTIONS:
-- Identify first incomplete logical unit (paragraph, bullet, subsection)
+- Identify first incomplete logical unit
 - Continue ONLY from that point
 - DO NOT repeat any completed content
-- If boundary is ambiguous, skip to next major bullet/subsection
 
 ═══ PREVIOUS OUTPUT ═══
 {partial}
 ═══ END PREVIOUS OUTPUT ═══
-
-Continue from: [Identify and state the continuation point]
 </recovery_mode>
 """
-    return intro
+    
+    validate_prompt_length(prompt)
+    return prompt
 
 
-def build_judge_prompt(title, author, genre, year, drafts):
-    """Enhanced with conflict resolution"""
-    valid_drafts = [d.strip() for d in drafts if d and str(d).strip()]
-    formatted = "\n\n".join(
-        [f"═══ DRAFT CANDIDATE {i+1} ═══\n{d}" for i, d in enumerate(valid_drafts)]
-    )
+def build_judge_prompt(
+    title: str, 
+    author: str, 
+    genre: str, 
+    year: Union[int, str], 
+    drafts: List[str]
+) -> str:
+    """Synthesizes multiple drafts into one master version."""
+    _validate_core_metadata(title, author)
+    formatted = _format_draft_candidates(drafts)
 
-    return f"""
+    prompt = f"""
 <role>SENIOR CHIEF EDITOR — Final Synthesis</role>
 
+{META_INSTRUCTION}
 {PRIORITY_HIERARCHY}
-{CORE_RULES_WITH_EXAMPLES}
-{EPISTEMIC_CONTROL_POLICY}
-{ESCAPE_HATCH_PROTOCOL}
 
 <task>
 Synthesize multiple draft candidates into ONE epistemically sound Master Summary.
@@ -107,56 +158,55 @@ SYNTHESIS PROTOCOL:
 3. Identify unique claims → evaluate epistemic basis → include if sound
 4. Consolidate redundancy → preserve analytical density
 5. Apply validation checklist → ensure all structural requirements met
-
-CONFLICT RESOLUTION:
-If drafts disagree:
-- Prefer claim with explicit source citation
-- If both cited, prefer more specific evidence
-- If equally valid, include both with hedge: "Interpretasi alternatif menunjukkan..."
 </task>
 
 <input_drafts>
 {formatted}
 </input_drafts>
 
-<output_structure_requirement>
+<target_structure>
 {CORE_STRUCTURE_PROMPT}
-</output_structure_requirement>
+</target_structure>
 
+{EPISTEMIC_CONTROL_POLICY}
+{FALLBACK_CONDITIONS}
+{ESCAPE_HATCH_PROTOCOL}
 {VALIDATION_CHECKLIST}
 """
+    validate_prompt_length(prompt)
+    return prompt
 
 
-def build_section_synthesis_prompt(name, contents, t, a, g, y, dc, full, hints):
-    """Enhanced with uncertainty protocol"""
-    valid_contents = [c for c in contents if c and str(c).strip()]
-    limit_char = 1000 if full else 4000
+def build_section_synthesis_prompt(
+    name: str, 
+    contents: List[str], 
+    t: str, 
+    a: str, 
+    g: str, 
+    y: Union[int, str], 
+    full: bool, 
+    hints: dict
+) -> str:
+    """Focused synthesis for individual sections with token safety."""
+    limit_tokens = (DRAFT_TRUNCATION_FULL if full else DRAFT_TRUNCATION_PARTIAL) // AVG_CHARS_PER_TOKEN
+    valid_contents = [safe_truncate(c, limit_tokens) for c in contents if c and str(c).strip()]
 
     fmt = "\n\n".join(
-        [
-            f"═══ SOURCE FRAGMENT {i+1} ═══\n{c[:limit_char]}{'...' if len(c) > limit_char else ''}"
-            for i, c in enumerate(valid_contents)
-        ]
+        [f"═══ SOURCE FRAGMENT {i+1} ═══\n{c}" for i, c in enumerate(valid_contents)]
     )
 
     hint = hints.get(name, "Synthesize with maximal epistemic discipline.")
 
-    return f"""
+    prompt = f"""
 <role>SECTION EDITOR — Focused Synthesis</role>
 
+{META_INSTRUCTION}
 {PRIORITY_HIERARCHY}
-{CORE_RULES_WITH_EXAMPLES}
-{EPISTEMIC_CONTROL_POLICY}
-{ESCAPE_HATCH_PROTOCOL}
 
 <context>
-Book: "{t}" by {a}
-Genre: {g} | Year: {y}
+Book: "{t}" by {a} | Genre: {g} | Year: {y}
+Target Section: {name}
 </context>
-
-<target_section>
-{name}
-</target_section>
 
 <specific_instruction>
 {hint}
@@ -166,116 +216,71 @@ Genre: {g} | Year: {y}
 {fmt if valid_contents else "[NO SOURCE AVAILABLE — APPLY ESCAPE HATCH PROTOCOL]"}
 </source_materials>
 
+{EPISTEMIC_CONTROL_POLICY}
+{FALLBACK_CONDITIONS}
+{ESCAPE_HATCH_PROTOCOL}
+
 <synthesis_protocol>
 1. Extract all relevant claims from source fragments
-2. Verify consistency across fragments
+2. Verify consistency across fragments. If conflict, use most detailed source.
 3. Construct logical narrative with epistemic tagging
-4. If insufficient data:
-   - Use linguistic hedging
-   - Apply scope limiters
-   - Add [Insufficient Data] marker if unavoidable
-5. DO NOT fabricate specifics
+4. If insufficient data: apply Fallback Conditions.
 </synthesis_protocol>
-
-<output_requirements>
-- Indonesian academic prose ONLY (no headers, no English paragraphs)
-- All interpretative constructs must be labeled
-- No generic statements without specific grounding
-- Length: responsive to content availability (quality > quota)
-</output_requirements>
 """
+    validate_prompt_length(prompt)
+    return prompt
 
 
-def build_critic_prompt(title, author, draft):
-    """Enhanced with specific failure modes"""
+def build_critic_prompt(title: str, author: str, draft: str) -> str:
+    """Audit draft for structural and epistemic violations."""
+    _validate_core_metadata(title, author)
+    truncated_draft = safe_truncate(draft, CRITIC_DRAFT_CHAR_LIMIT // AVG_CHARS_PER_TOKEN)
+    
     return f"""
 <role>ACADEMIC PEER REVIEWER — Epistemic Audit</role>
 
+{META_INSTRUCTION}
 {PRIORITY_HIERARCHY}
-{CORE_RULES_WITH_EXAMPLES}
 {EPISTEMIC_CONTROL_POLICY}
 
 <task>
-Audit draft for structural, analytical, and epistemic violations.
-
-AUDIT CHECKLIST:
-STRUCTURAL:
-- Section count = 3?
-- Headers in English?
-- First paragraph = 100-150 words, no bullets?
-- Section 3 has comparative axis?
-
-EPISTEMIC:
-- Any unlabeled interpretative constructs?
-- Any causal claims without mechanism?
-- Any genealogical claims without source/label?
-- Any fabricated quotes or statistics?
-
-LINGUISTIC:
-- Any full English paragraphs?
-- Any forced Indonesian translations that reduce clarity?
-- Any promotional language?
-
-ANALYTICAL:
-- Argument separation clear (data/interpretation/normative)?
-- Evidence typing present for major claims?
-- Uncertainty appropriately expressed?
+Audit draft for structural, analytical, and epistemic violations. Return JSON.
 </task>
 
 <draft_to_evaluate>
-{draft[:8000]}
+{truncated_draft}
 </draft_to_evaluate>
 
 <output_schema>
 Return ONLY valid JSON:
 {{
-  "score": [integer 0-100, where 100 = perfect compliance],
-  "structural_issues": ["specific violation with location"],
-  "epistemic_issues": ["specific violation with location"],
-  "linguistic_issues": ["specific violation with location"],
-  "analytical_issues": ["specific violation with location"],
-  "fixes": ["concrete corrective instruction, prioritized by severity"]
+  "score": [0-100],
+  "structural_issues": [],
+  "epistemic_issues": [],
+  "fixes": ["prioritized corrective instructions"]
 }}
-
-SCORING RUBRIC:
-90-100: Minor issues only (style, word choice)
-70-89: Moderate issues (missing labels, unclear hedging)
-50-69: Serious issues (fabrication, unlabeled constructs, structural violations)
-<50: Critical failures (multiple fabrications, wrong language in headers)
 </output_schema>
 """
 
 
-def build_refiner_prompt(title, author, draft, issues, fixes):
-    """Enhanced with surgical editing protocol"""
-    issues_block = "\n".join([f"- {i}" for i in issues]) if issues else "[No issues reported]"
-    fixes_block = "\n".join([f"+ {f}" for f in fixes]) if fixes else "[No fixes required]"
+def build_refiner_prompt(title: str, author: str, draft: str, issues: List[str], fixes: List[str]) -> str:
+    """Surgical revision based on critic feedback."""
+    _validate_core_metadata(title, author)
+    issues_block = "\n".join([f"- {i}" for i in issues]) if issues else "[No issues]"
+    fixes_block = "\n".join([f"+ {f}" for f in fixes]) if fixes else "[No fixes]"
 
     return f"""
 <role>SENIOR REVISIONIST — Surgical Correction</role>
 
+{META_INSTRUCTION}
 {PRIORITY_HIERARCHY}
-{CORE_RULES_WITH_EXAMPLES}
 {EPISTEMIC_CONTROL_POLICY}
+{FALLBACK_CONDITIONS}
 {ESCAPE_HATCH_PROTOCOL}
 
-<task>
-Apply corrections to achieve full epistemic and structural compliance.
-
-REVISION PROTOCOL:
-1. Address all "Critical" and "High Priority" fixes first
-2. Preserve all valid analytical content
-3. Make minimal changes necessary (surgical editing)
-4. Re-run validation checklist after revision
-5. If new issues emerge, apply escape hatch protocol
-</task>
-
 <critique_report>
-ISSUES IDENTIFIED:
-{issues_block}
-
-REQUIRED FIXES (in priority order):
-{fixes_block}
+ISSUES: {issues_block}
+FIXES: {fixes_block}
 </critique_report>
 
 <original_draft>
@@ -283,20 +288,10 @@ REQUIRED FIXES (in priority order):
 </original_draft>
 
 <revision_instructions>
-- Edit surgically: change only what violates rules
-- Preserve voice and analytical structure where compliant
-- If fix creates new conflict, apply priority hierarchy
-- Add explicit markers where required ([Interpretative Construct], etc.)
-- Output final publication-ready text
+- Apply corrections surgically.
+- Preserve analytical integrity.
+- Output final publication-ready Indonesian text.
 </revision_instructions>
 
 {VALIDATION_CHECKLIST}
-
-<final_check>
-After revision, verify:
-1. All reported issues resolved
-2. No new violations introduced
-3. Structural integrity maintained
-4. Epistemic accuracy preserved
-</final_check>
 """

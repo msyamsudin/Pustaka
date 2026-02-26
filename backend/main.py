@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from verifier import BookVerifier
 from summarizer import BookSummarizer
-from config_manager import ConfigManager
+from user_prefs import UserPrefsManager
 from storage_manager import StorageManager
 from notion_manager import NotionManager
 import summarizer_utils
@@ -18,7 +18,7 @@ import summarizer_utils
 load_dotenv()
 
 app = FastAPI(title="Pustaka+ API")
-config_manager = ConfigManager()
+config_manager = UserPrefsManager()
 storage_manager = StorageManager()
 
 # Ensure covers directory exists for static mounting
